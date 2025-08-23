@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 import asyncio
 import tempfile
+import logging
 
 from services.csv_processor import CSVProcessor
 from services.sku_manager import SKUManager
@@ -19,14 +20,26 @@ from services.validator import Validator
 from services.rakuten_processor import RakutenCSVProcessor
 from models.schemas import ProcessRequest, DeviceAction, ProcessingOptions
 
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Rakuten SKU Manager API", version="1.0.0")
+
+# CORS設定を環境変数から取得
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
+    max_age=3600,
 )
 
 BASE_DIR = Path(__file__).parent
@@ -51,9 +64,25 @@ async def root():
 @app.post("/api/upload")
 async def upload_csv(file: UploadFile = File(...)):
     """Upload CSV file for processing"""
-    print(f"Uploading file: {file.filename}")
+    logger.info(f"Uploading file: {file.filename}")
+    
+    # ファイル形式チェック
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+    
+    # ファイルサイズチェック（最大100MB）
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    contents = await file.read()
+    file_size = len(contents)
+    
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413, 
+            detail=f"File size {file_size / 1024 / 1024:.2f}MB exceeds maximum allowed size of 100MB"
+        )
+    
+    # ファイルを元の位置に戻す
+    await file.seek(0)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"upload_{timestamp}_{file.filename}"
@@ -72,24 +101,40 @@ async def upload_csv(file: UploadFile = File(...)):
         sku_col = 'SKU管理番号'
         device_col = 'バリエーション項目選択肢2'
         
-        # Get products with their devices
+        # Get products with their devices from variation definition
         product_devices = {}
-        if product_col in df.columns and sku_col in df.columns and device_col in df.columns:
-            # Group by product
+        var_def_col = 'バリエーション2選択肢定義'
+        
+        if product_col in df.columns and sku_col in df.columns and var_def_col in df.columns:
+            # 親行から機種リストを取得
+            for idx, row in df.iterrows():
+                has_product = pd.notna(row.get(product_col))
+                sku_value = row.get(sku_col)
+                is_sku_empty = pd.isna(sku_value) or sku_value == ''
+                
+                if has_product and is_sku_empty:
+                    # Parent row
+                    product_id = row[product_col]
+                    var_def_value = row.get(var_def_col, None)
+                    
+                    if pd.notna(var_def_value) and var_def_value and str(var_def_value).strip():
+                        # パイプ区切りの機種リストを解析
+                        device_list = [d.strip() for d in str(var_def_value).split('|') if d.strip()]
+                        if device_list:
+                            product_devices[product_id] = device_list
+        
+        # フォールバック: SKU行から取得
+        if not product_devices and device_col in df.columns:
             current_product = None
             for _, row in df.iterrows():
                 if pd.notna(row[product_col]) and pd.isna(row[sku_col]):
-                    # Parent row - new product
                     current_product = row[product_col]
                     if current_product not in product_devices:
-                        product_devices[current_product] = set()
-                elif pd.notna(row[sku_col]) and current_product:
-                    # SKU row
-                    if pd.notna(row[device_col]):
-                        product_devices[current_product].add(row[device_col])
-        
-        # Convert sets to lists for JSON
-        product_devices = {k: sorted(list(v)) for k, v in product_devices.items()}
+                        product_devices[current_product] = []
+                elif pd.notna(row.get(sku_col, '')) and current_product:
+                    if pd.notna(row.get(device_col, '')):
+                        if row[device_col] not in product_devices[current_product]:
+                            product_devices[current_product].append(row[device_col])
         
         # Get overall device list
         devices = device_manager.extract_devices(df)

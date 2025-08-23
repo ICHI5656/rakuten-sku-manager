@@ -3,6 +3,9 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict, Tuple
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RakutenCSVProcessor:
     """楽天RMS CSV処理クラス - 正しい親子構造を維持"""

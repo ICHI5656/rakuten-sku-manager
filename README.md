@@ -2,6 +2,11 @@
 
 楽天RMS対応のCSV処理システム。機種の追加・削除、SKU自動採番、バリエーション展開を自動化します。
 
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18.0+-blue.svg)](https://react.dev/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## 機能概要
 
 - **CSV処理**: 楽天RMS仕様のCSVファイル（Shift-JIS）を読み込み・処理
@@ -10,14 +15,25 @@
 - **バリエーション展開**: 全組み合わせの自動生成（cross join）
 - **制約チェック**: 楽天RMS制限（最大40選択肢/属性、400SKU/商品）の自動検証
 - **複数出力形式**: 単一ファイル、商品別分割、6万行自動分割
+- **セキュリティ強化**: CORS設定、ファイルサイズ制限、エラーハンドリング改善
+- **パフォーマンス最適化**: 大規模CSV処理の高速化、メモリ使用量の最適化
 
 ## クイックスタート
 
-### Dockerを使用した起動
+### 前提条件
+- Docker Desktop 20.10以上
+- Git 2.0以上
+
+### インストール
 
 ```bash
-# リポジトリに移動
+# リポジトリのクローン
+git clone https://github.com/[your-username]/rakuten_sku_manager.git
 cd rakuten_sku_manager
+
+# 環境変数の設定
+cp .env.example .env
+# 必要に応じて.envファイルを編集
 
 # Dockerコンテナを起動
 docker-compose up -d
@@ -120,6 +136,65 @@ rakuten_sku_manager/
 | POST | `/api/process` | CSV処理の実行 |
 | GET | `/api/download/{filename}` | 処理済みファイルのダウンロード |
 | GET | `/api/devices/{file_id}` | 機種一覧の取得 |
+
+## テスト
+
+```bash
+# テスト環境のセットアップ
+pip install pytest pytest-cov
+
+# テストの実行
+cd rakuten_sku_manager
+pytest tests/ -v
+
+# カバレッジレポート付きテスト
+pytest tests/ --cov=backend --cov-report=html
+```
+
+## 開発
+
+### 環境変数
+
+`.env.example`をコピーして`.env`を作成し、環境に応じて設定を変更してください：
+
+```bash
+# CORS設定
+ALLOWED_ORIGINS=http://localhost:3000
+
+# ファイルアップロード設定
+MAX_FILE_SIZE_MB=100
+
+# ログレベル
+LOG_LEVEL=INFO
+```
+
+### コードの再ビルド
+
+```bash
+# 変更後の再ビルド
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+## ドキュメント
+
+- [コード分析レポート](CODE_ANALYSIS_REPORT.md) - コードベースの詳細な分析
+- [改善レポート](IMPROVEMENT_REPORT.md) - 実施した改善内容の詳細
+- [Claude設定](CLAUDE.md) - Claude Code用の設定ガイド
+
+## ライセンス
+
+MIT License
+
+## 作者
+
+Your Name
+
+## 謝辞
+
+- 楽天RMS CSVフォーマットのサポート
+- FastAPIコミュニティ
+- React/Material-UIチーム
 | GET | `/api/status` | システムステータス |
 | DELETE | `/api/cleanup` | 古いファイルの削除 |
 

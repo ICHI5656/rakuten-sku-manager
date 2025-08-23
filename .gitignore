@@ -8,45 +8,66 @@ env/
 venv/
 ENV/
 VENV/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+*.egg
+
+# Environment variables
 .env
+.env.local
+.env.*.local
 
 # Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-dist/
-build/
+.npm
+.eslintcache
+*.tsbuildinfo
+
+# Frontend build
+frontend/dist/
+frontend/build/
 
 # Data
-data/
+data/uploads/*.csv
+data/outputs/*.csv
+data/state/*.json
+!data/uploads/.gitkeep
+!data/outputs/.gitkeep
+!data/state/.gitkeep
+
+# CSV files (keep test samples)
 *.csv
-*.xlsx
-*.xls
+!tests/fixtures/*.csv
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # Docker
 .dockerignore
+docker-compose.override.yml
 
-# Test files
-test_*.py
-check_*.py
-verify_*.py
-analyze_*.py
-debug_*.py
-*_test.py
-trace_*.py
-find_*.py
-process_*.py
-reprocess_*.py
-deep_*.py
-create_*.py
-final_*.py
+# Test/Debug files (プロジェクトルートのみ)
+/test_*.py
+/check_*.py
+/verify_*.py
+/analyze_*.py
+/debug_*.py
+/trace_*.py
+/find_*.py
+/process_*.py
+/reprocess_*.py
+/deep_*.py
+/create_*.py
+/final_*.py
 
 # Logs
 *.log
@@ -55,3 +76,10 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# Temporary
+*.tmp
+*.temp
+.tmp/
+temp/
