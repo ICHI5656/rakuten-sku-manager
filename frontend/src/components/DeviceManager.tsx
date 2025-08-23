@@ -94,6 +94,31 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
     onNext(devicesToAdd, devicesToRemove);
   };
 
+  // 機種リストでグループ化する処理
+  const groupProductsByDevices = () => {
+    if (!productDevices) return {};
+    
+    const groups: { [key: string]: { devices: string[], products: string[] } } = {};
+    
+    Object.entries(productDevices).forEach(([productId, deviceList]) => {
+      // 機種リストをソートして文字列化（比較用のキーを作成）
+      const deviceKey = [...deviceList].sort().join('|');
+      
+      if (!groups[deviceKey]) {
+        groups[deviceKey] = {
+          devices: deviceList,
+          products: []
+        };
+      }
+      groups[deviceKey].products.push(productId);
+    });
+    
+    return groups;
+  };
+
+  const deviceGroups = groupProductsByDevices();
+  const hasMultipleGroups = Object.keys(deviceGroups).length > 1;
+
   return (
     <Box>
       <Grid container spacing={3}>
@@ -132,47 +157,51 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
                     textAlign: 'center',
                     borderRadius: 1
                   }}>
-                    ✅ 複数商品が検出されました！各商品の機種は別窓で確認してください。
+                    ✅ 複数商品が検出されました！
+                    {hasMultipleGroups ? '機種リストが異なる商品グループがあります。' : '全商品が同じ機種リストを持っています。'}
                   </Typography>
                   
-                  {Object.entries(productDevices).map(([productId, productDeviceList], index) => {
-                    const uniqueDevices = deviceDifferences[productId] || [];
-                    const hasUnique = uniqueDevices.length > 0;
+                  {Object.entries(deviceGroups).map(([deviceKey, group], groupIndex) => {
+                    const isOnlyGroup = Object.keys(deviceGroups).length === 1;
+                    const hasMultipleProducts = group.products.length > 1;
                     
                     return (
                       <Paper 
-                        key={productId} 
+                        key={deviceKey} 
                         sx={{ 
                           p: 2, 
                           mb: 2,
-                          border: hasUnique ? '2px solid #ff9800' : '1px solid #e0e0e0',
-                          backgroundColor: hasUnique ? '#fff3e0' : 'background.paper'
+                          border: isOnlyGroup ? '1px solid #e0e0e0' : '2px solid #2196f3',
+                          backgroundColor: isOnlyGroup ? 'background.paper' : '#e3f2fd'
                         }}
                       >
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Box>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                              商品{index + 1}: {productId}
+                        <Box>
+                          {/* グループヘッダー */}
+                          <Box sx={{ mb: 1 }}>
+                            <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 'bold' }}>
+                              {isOnlyGroup ? '全商品共通の機種リスト' : `機種グループ ${groupIndex + 1}`}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                              機種数: {productDeviceList.length}機種
-                              {hasUnique && (
-                                <Chip 
-                                  label={`固有機種: ${uniqueDevices.length}個`} 
-                                  size="small" 
-                                  color="warning"
-                                  sx={{ ml: 1 }}
-                                />
-                              )}
+                              {hasMultipleProducts 
+                                ? `対象商品: ${group.products.join(', ')}` 
+                                : `対象商品: ${group.products[0]}`}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              機種数: {group.devices.length}機種
                             </Typography>
                           </Box>
+                          
+                          {/* 機種一覧表示ボタン（グループに1つだけ） */}
                           <Button
                             variant="outlined"
+                            fullWidth
                             startIcon={<OpenInNewIcon />}
-                            onClick={() => setSelectedProduct({productId, devices: productDeviceList})}
-                            sx={{ minWidth: 120 }}
+                            onClick={() => setSelectedProduct({
+                              productId: group.products.join(', '),
+                              devices: group.devices
+                            })}
                           >
-                            機種一覧を開く
+                            この機種リストを確認 ({group.devices.length}機種)
                           </Button>
                         </Box>
                       </Paper>
@@ -356,7 +385,9 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <OpenInNewIcon />
             <Typography variant="h6">
-              {selectedProduct?.productId} の機種一覧
+              {selectedProduct?.productId.includes(',') 
+                ? '共通機種リスト' 
+                : `${selectedProduct?.productId} の機種一覧`}
             </Typography>
           </Box>
         </DialogTitle>
@@ -364,12 +395,16 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
           {selectedProduct && (
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                この商品に含まれる全機種 ({selectedProduct.devices.length}機種)
+                {selectedProduct.productId.includes(',') 
+                  ? `対象商品: ${selectedProduct.productId}` 
+                  : `この商品に含まれる全機種`} ({selectedProduct.devices.length}機種)
               </Typography>
               
               <List>
                 {selectedProduct.devices.map((device, index) => {
-                  const isUnique = deviceDifferences[selectedProduct.productId]?.includes(device);
+                  // グループ化された商品の場合はisUniqueを無効化
+                  const isGrouped = selectedProduct.productId.includes(',');
+                  const isUnique = !isGrouped && deviceDifferences[selectedProduct.productId]?.includes(device);
                   return (
                     <ListItem 
                       key={device}
@@ -406,7 +441,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
                 })}
               </List>
               
-              {deviceDifferences[selectedProduct.productId]?.length > 0 && (
+              {!selectedProduct.productId.includes(',') && deviceDifferences[selectedProduct.productId]?.length > 0 && (
                 <Box sx={{ mt: 2, p: 2, backgroundColor: 'warning.light', borderRadius: 1 }}>
                   <Typography variant="subtitle2" color="warning.dark">
                     ⚠️ この商品固有の機種
