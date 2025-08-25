@@ -25,7 +25,11 @@ function App() {
   const [productDevices, setProductDevices] = useState<Record<string, string[]>>({});
   const [selectedDevices, setSelectedDevices] = useState<{
     toAdd: string[],
-    toRemove: string[]
+    toRemove: string[],
+    position?: 'start' | 'end' | 'after' | 'custom' | 'final_order',
+    afterDevice?: string,
+    customDeviceOrder?: string[],
+    insertIndex?: number
   }>({ toAdd: [], toRemove: [] });
   const [processResult, setProcessResult] = useState<ProcessResponse | null>(null);
   const [error, setError] = useState<string>('');
@@ -39,8 +43,22 @@ function App() {
     setActiveStep(1);
   };
 
-  const handleDeviceSelection = (devicesToAdd: string[], devicesToRemove: string[]) => {
-    setSelectedDevices({ toAdd: devicesToAdd, toRemove: devicesToRemove });
+  const handleDeviceSelection = (
+    devicesToAdd: string[], 
+    devicesToRemove: string[], 
+    position?: 'start' | 'end' | 'after' | 'custom' | 'final_order', 
+    afterDevice?: string,
+    customDeviceOrder?: string[],
+    insertIndex?: number
+  ) => {
+    setSelectedDevices({ 
+      toAdd: devicesToAdd, 
+      toRemove: devicesToRemove,
+      position: position,
+      afterDevice: afterDevice,
+      customDeviceOrder: customDeviceOrder,
+      insertIndex: insertIndex
+    });
     setActiveStep(2);
   };
 
@@ -51,7 +69,11 @@ function App() {
         file_id: fileId,
         devices_to_add: selectedDevices.toAdd,
         devices_to_remove: selectedDevices.toRemove,
-        output_format: outputFormat
+        output_format: outputFormat,
+        add_position: selectedDevices.position,
+        after_device: selectedDevices.afterDevice,
+        custom_device_order: selectedDevices.customDeviceOrder,
+        insert_index: selectedDevices.insertIndex
       };
       
       const result = await processCSV(request);

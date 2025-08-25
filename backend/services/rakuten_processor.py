@@ -42,8 +42,17 @@ class RakutenCSVProcessor:
                 }, f, ensure_ascii=False, indent=2)
     
     def process_csv(self, df: pd.DataFrame, devices_to_add: List[str] = None, 
-                   devices_to_remove: List[str] = None) -> pd.DataFrame:
+                   devices_to_remove: List[str] = None, add_position: str = 'start',
+                   after_device: str = None, custom_device_order: List[str] = None,
+                   insert_index: int = None) -> pd.DataFrame:
         """CSVを処理して機種を追加/削除（複数商品対応）"""
+        
+        # デバッグログ
+        print(f"[DEBUG] process_csv called with:")
+        print(f"  devices_to_add: {devices_to_add}")
+        print(f"  devices_to_remove: {devices_to_remove}")
+        print(f"  add_position: {add_position}")
+        print(f"  custom_device_order: {custom_device_order}")
         
         # 商品管理番号の列を特定
         product_col = '商品管理番号（商品URL）'
@@ -63,23 +72,28 @@ class RakutenCSVProcessor:
             
             if not parent_rows.empty:
                 product_id = parent_rows.iloc[0][product_col]
+                print(f"[DEBUG] Processing product: {product_id}")
                 
                 # 機種削除
                 if devices_to_remove:
+                    print(f"[DEBUG] Removing devices: {devices_to_remove}")
                     sku_rows = self._remove_devices(sku_rows, devices_to_remove, device_col)
                 
                 # 機種追加
                 if devices_to_add:
+                    print(f"[DEBUG] Adding devices: {devices_to_add}")
                     new_sku_rows = self._add_devices(
                         parent_rows, sku_rows, devices_to_add, 
                         product_id, product_col, device_col, color_col, sku_col
                     )
+                    print(f"[DEBUG] Created {len(new_sku_rows)} new SKU rows")
                     sku_rows = pd.concat([new_sku_rows, sku_rows], ignore_index=True)
                 
-                # バリエーション2選択肢定義を更新（親行）- 新機種を先頭に配置
+                # バリエーション2選択肢定義を更新（親行）- 位置指定に対応
                 if device_def_col in parent_rows.columns and not sku_rows.empty:
                     parent_rows = self._update_device_definition(
-                        parent_rows, sku_rows, device_col, device_def_col, devices_to_add
+                        parent_rows, sku_rows, device_col, device_def_col, devices_to_add,
+                        add_position, after_device, custom_device_order, insert_index
                     )
                 
                 # 全てのSKU番号を新規採番（sku_aプレフィックス）
@@ -278,17 +292,24 @@ class RakutenCSVProcessor:
     
     def _update_device_definition(self, parent_rows: pd.DataFrame, sku_rows: pd.DataFrame,
                                  device_col: str, device_def_col: str, 
-                                 devices_to_add: List[str] = None) -> pd.DataFrame:
+                                 devices_to_add: List[str] = None, add_position: str = 'start',
+                                 after_device: str = None, custom_device_order: List[str] = None,
+                                 insert_index: int = None) -> pd.DataFrame:
         """バリエーション2選択肢定義を更新（全機種リスト）"""
+        print(f"[DEBUG] _update_device_definition called with:")
+        print(f"  add_position: {add_position}")
+        print(f"  custom_device_order: {custom_device_order}")
+        print(f"  devices_to_add: {devices_to_add}")
+        
         if device_col not in sku_rows.columns:
             return parent_rows
         
         # SKU行から全機種を取得
         all_devices = sku_rows[device_col].dropna().unique()
-        print(f"All devices found: {all_devices}")
-        print(f"Number of parent rows to update: {len(parent_rows)}")
+        print(f"[DEBUG] All devices found in SKU rows: {all_devices}")
+        print(f"[DEBUG] Number of parent rows to update: {len(parent_rows)}")
         
-        # 新機種を先頭に配置
+        # 機種リストの組み立て
         device_list = []
         new_devices = []
         existing_devices = []
@@ -298,14 +319,40 @@ class RakutenCSVProcessor:
         
         for device in all_devices:
             device_str = str(device)
-            # 新規追加機種を先頭に
             if device_str in devices_to_add_set:
                 new_devices.append(device_str)
             else:
                 existing_devices.append(device_str)
         
-        # 新機種を先頭、その後既存機種
-        device_list = new_devices + existing_devices
+        # 位置指定に基づいて機種リストを組み立て
+        if add_position == 'final_order' and custom_device_order:
+            # 完全な機種リストがフロントエンドから送られてきた場合
+            device_list = list(custom_device_order)
+        elif add_position == 'custom' and custom_device_order and insert_index is not None:
+            # カスタム順序で処理
+            device_list = list(custom_device_order)
+            # 指定位置に新機種を挿入
+            for i, new_device in enumerate(new_devices):
+                device_list.insert(insert_index + i, new_device)
+        elif add_position == 'start':
+            # リストの先頭に追加
+            device_list = new_devices + existing_devices
+        elif add_position == 'end':
+            # リストの末尾に追加
+            device_list = existing_devices + new_devices
+        elif add_position == 'after' and after_device:
+            # 特定機種の後に追加
+            device_list = []
+            for device in existing_devices:
+                device_list.append(device)
+                if device == after_device:
+                    device_list.extend(new_devices)
+            # after_deviceが見つからない場合は末尾に追加
+            if after_device not in existing_devices:
+                device_list.extend(new_devices)
+        else:
+            # デフォルトは先頭に追加
+            device_list = new_devices + existing_devices
         
         # パイプ区切りで結合（楽天RMS仕様）
         device_definition = '|'.join(device_list)

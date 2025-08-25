@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Fragment } from 'react';
 import {
   Box,
   Typography,
@@ -17,18 +17,39 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Alert
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import EditIcon from '@mui/icons-material/Edit';
+import SwapVertIcon from '@mui/icons-material/SwapVert';
+import DeviceOrderEditor from './DeviceOrderEditor';
+import DeviceListOrganizer from './DeviceListOrganizer';
 
 interface DeviceManagerProps {
   devices: string[];
   productDevices?: Record<string, string[]>;
-  onNext: (devicesToAdd: string[], devicesToRemove: string[]) => void;
+  onNext: (
+    devicesToAdd: string[], 
+    devicesToRemove: string[], 
+    position?: 'start' | 'end' | 'after' | 'custom' | 'final_order', 
+    afterDevice?: string,
+    customDeviceOrder?: string[],
+    insertIndex?: number
+  ) => void;
   onBack: () => void;
 }
 
@@ -36,11 +57,23 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
   const [devicesToRemove, setDevicesToRemove] = useState<string[]>([]);
   const [devicesToAdd, setDevicesToAdd] = useState<string[]>([]);
   const [newDevice, setNewDevice] = useState('');
+  const [addPosition, setAddPosition] = useState<'start' | 'end' | 'after'>('start');
+  const [afterDevice, setAfterDevice] = useState<string>('');
+  const [insertIndex, setInsertIndex] = useState<number>(0);
+  const [showOrderPreview, setShowOrderPreview] = useState(false);
+  const [showOrderEditor, setShowOrderEditor] = useState(false);
+  const [customDeviceOrder, setCustomDeviceOrder] = useState<string[] | null>(null);
+  const [showListOrganizer, setShowListOrganizer] = useState(false);
+  const [finalDeviceOrder, setFinalDeviceOrder] = useState<string[] | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<{productId: string, devices: string[]} | null>(null);
   
   // Debug log
   console.log('DeviceManager received productDevices:', productDevices);
   console.log('Number of products:', productDevices ? Object.keys(productDevices).length : 0);
+  console.log('[DEBUG] devices prop:', devices);
+  console.log('[DEBUG] devices length:', devices ? devices.length : 0);
+  console.log('[DEBUG] devices type:', typeof devices);
+  console.log('[DEBUG] Is devices an array?', Array.isArray(devices));
   
   // 商品間の機種の違いを検出
   const deviceDifferences: Record<string, string[]> = {};
@@ -91,7 +124,25 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
   };
 
   const handleNext = () => {
-    onNext(devicesToAdd, devicesToRemove);
+    console.log('[DEBUG] handleNext called with:');
+    console.log('  devices:', devices);
+    console.log('  devicesToAdd:', devicesToAdd);
+    console.log('  devicesToRemove:', devicesToRemove);
+    console.log('  addPosition:', addPosition);
+    console.log('  afterDevice:', afterDevice);
+    
+    if (finalDeviceOrder) {
+      // 完全カスタマイズモードの場合
+      const existingSet = new Set(devices);
+      const newDevicesInOrder = finalDeviceOrder.filter(d => !existingSet.has(d));
+      const removedDevices = devices.filter(d => !finalDeviceOrder.includes(d));
+      
+      onNext(newDevicesInOrder, removedDevices, 'final_order', undefined, finalDeviceOrder, undefined);
+    } else if (customDeviceOrder) {
+      onNext(devicesToAdd, devicesToRemove, 'custom', undefined, customDeviceOrder, insertIndex);
+    } else {
+      onNext(devicesToAdd, devicesToRemove, addPosition, afterDevice);
+    }
   };
 
   // 機種リストでグループ化する処理
@@ -286,6 +337,212 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
               追加する機種名を入力してください（複数の場合はカンマ区切り）
             </Typography>
             
+            {/* カスタマイズ状態の表示 */}
+            {finalDeviceOrder && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                完全カスタマイズモードが有効です。機種の配置が完全にカスタマイズされます。
+                <br />
+                <Typography variant="caption">
+                  最終的な機種数: {finalDeviceOrder.length}機種
+                </Typography>
+              </Alert>
+            )}
+            
+            {/* 位置選択 - より視覚的に */}
+            <Box sx={{ mt: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                  追加位置の選択
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="success"
+                  onClick={() => setShowListOrganizer(true)}
+                  startIcon={<SwapVertIcon />}
+                  sx={{ mr: 1 }}
+                  disabled={devicesToAdd.length === 0}
+                >
+                  完全カスタマイズ
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setShowOrderEditor(true)}
+                  startIcon={<EditIcon />}
+                  sx={{ mr: 1 }}
+                >
+                  挿入位置指定
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setShowOrderPreview(!showOrderPreview)}
+                  endIcon={<ArrowDropDownIcon />}
+                >
+                  プレビュー
+                </Button>
+              </Box>
+              
+              {/* プレビュー表示 */}
+              {showOrderPreview && (
+                <Paper sx={{ p: 2, mb: 2, backgroundColor: '#f5f5f5' }}>
+                  <Typography variant="caption" color="text.secondary" gutterBottom>
+                    現在の機種リスト順序（パイプ区切りで保存されます）
+                  </Typography>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexWrap: 'wrap', 
+                    gap: 0.5,
+                    mt: 1,
+                    p: 1,
+                    backgroundColor: 'white',
+                    borderRadius: 1,
+                    maxHeight: 200,
+                    overflow: 'auto'
+                  }}>
+                    {devices.map((device, index) => {
+                      const isInsertPoint = 
+                        (addPosition === 'start' && index === 0) ||
+                        (addPosition === 'end' && index === devices.length - 1) ||
+                        (addPosition === 'after' && devices[index - 1] === afterDevice);
+                      
+                      return (
+                        <Fragment key={device}>
+                          {isInsertPoint && index === 0 && addPosition === 'start' && (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center',
+                              px: 1,
+                              backgroundColor: '#4caf50',
+                              color: 'white',
+                              borderRadius: 1
+                            }}>
+                              <ArrowDropDownIcon sx={{ transform: 'rotate(-90deg)' }} />
+                              新機種をここに挿入
+                            </Box>
+                          )}
+                          
+                          <Chip
+                            label={device}
+                            size="small"
+                            variant={device === afterDevice ? "filled" : "outlined"}
+                            color={device === afterDevice ? "primary" : "default"}
+                            sx={{ m: 0.5 }}
+                          />
+                          
+                          {isInsertPoint && addPosition === 'after' && (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center',
+                              px: 1,
+                              backgroundColor: '#4caf50',
+                              color: 'white',
+                              borderRadius: 1
+                            }}>
+                              <ArrowDropDownIcon sx={{ transform: 'rotate(-90deg)' }} />
+                              新機種
+                            </Box>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                    {addPosition === 'end' && (
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        px: 1,
+                        backgroundColor: '#4caf50',
+                        color: 'white',
+                        borderRadius: 1,
+                        ml: 0.5
+                      }}>
+                        <ArrowDropDownIcon sx={{ transform: 'rotate(-90deg)' }} />
+                        新機種をここに挿入
+                      </Box>
+                    )}
+                  </Box>
+                </Paper>
+              )}
+              
+              <RadioGroup
+                value={addPosition}
+                onChange={(e) => {
+                  const newPosition = e.target.value as 'start' | 'end' | 'after';
+                  setAddPosition(newPosition);
+                  if (newPosition !== 'after') {
+                    setAfterDevice('');
+                  }
+                }}
+              >
+                <FormControlLabel 
+                  value="start" 
+                  control={<Radio size="small" />} 
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <span>リストの先頭に追加</span>
+                      <Chip label="最初" size="small" sx={{ ml: 1 }} />
+                    </Box>
+                  }
+                />
+                <FormControlLabel 
+                  value="end" 
+                  control={<Radio size="small" />} 
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <span>リストの末尾に追加</span>
+                      <Chip label="最後" size="small" sx={{ ml: 1 }} />
+                    </Box>
+                  }
+                />
+                <FormControlLabel 
+                  value="after" 
+                  control={<Radio size="small" />} 
+                  label="特定機種の後に追加" 
+                />
+              </RadioGroup>
+              
+              {addPosition === 'after' && (
+                <Box sx={{ mt: 1, pl: 3 }}>
+                  {/* デバッグ情報 */}
+                  {devices.length === 0 && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                      既存の機種が見つかりません。CSVファイルに機種データが含まれているか確認してください。
+                    </Alert>
+                  )}
+                  <FormControl fullWidth size="small">
+                    <InputLabel>どの機種の後に追加</InputLabel>
+                    <Select
+                      value={afterDevice}
+                      onChange={(e) => setAfterDevice(e.target.value)}
+                      label="どの機種の後に追加"
+                      disabled={devices.length === 0}
+                    >
+                      {devices.length > 0 ? (
+                        devices.map((device, index) => (
+                          <MenuItem key={device} value={device}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                              <span style={{ marginRight: 8 }}>#{index + 1}</span>
+                              <span>{device}</span>
+                            </Box>
+                          </MenuItem>
+                        ))
+                      ) : (
+                        <MenuItem value="" disabled>
+                          機種が見つかりません
+                        </MenuItem>
+                      )}
+                    </Select>
+                  </FormControl>
+                  {afterDevice && (
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                      「{afterDevice}」の直後に新機種が挿入されます
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </Box>
+            
             <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
               <TextField
                 fullWidth
@@ -373,6 +630,48 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
           次へ
         </Button>
       </Box>
+
+      {/* 完全カスタマイズモーダル */}
+      <Dialog
+        open={showListOrganizer}
+        onClose={() => setShowListOrganizer(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogContent>
+          <DeviceListOrganizer
+            existingDevices={devices}
+            newDevices={devicesToAdd}
+            onConfirm={(finalOrder) => {
+              setFinalDeviceOrder(finalOrder);
+              setShowListOrganizer(false);
+            }}
+            onCancel={() => setShowListOrganizer(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* 順序エディタモーダル */}
+      <Dialog
+        open={showOrderEditor}
+        onClose={() => setShowOrderEditor(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogContent>
+          <DeviceOrderEditor
+            devices={customDeviceOrder || devices}
+            newDevices={devicesToAdd}
+            onOrderChange={(orderedDevices, position) => {
+              setCustomDeviceOrder(orderedDevices);
+              setInsertIndex(position);
+              setAddPosition('after');
+              setShowOrderEditor(false);
+            }}
+            onCancel={() => setShowOrderEditor(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* 商品別機種表示モーダル */}
       <Dialog 

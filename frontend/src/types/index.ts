@@ -3,6 +3,10 @@ export interface ProcessRequest {
   devices_to_add: string[];
   devices_to_remove: string[];
   output_format: string;
+  add_position?: 'start' | 'end' | 'after' | 'custom' | 'final_order';
+  after_device?: string;
+  custom_device_order?: string[];
+  insert_index?: number;
 }
 
 export interface ProcessResponse {

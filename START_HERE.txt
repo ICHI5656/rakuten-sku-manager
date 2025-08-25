@@ -1,0 +1,37 @@
+========================================
+Rakuten SKU Manager - Docker Update
+========================================
+
+QUICK START:
+1. Double-click: docker-rebuild.cmd
+2. Wait 5-10 minutes for rebuild
+3. Open: http://localhost:3000
+4. Press Ctrl+F5 to clear cache
+
+NEW FEATURES:
+- Green "Complete Customize" button (完全カスタマイズ)
+- Drag & drop device reordering
+- Individual positioning for each new device
+
+WHAT'S NEW:
+- Add devices like: test1, test2, test3
+- Click green "Complete Customize" button
+- Drag each device to any position
+- test1 can be at top, test2 in middle, test3 at end
+
+TROUBLESHOOTING:
+If button not showing:
+1. Clear browser cache: Ctrl+Shift+Delete
+2. Use private/incognito window: Ctrl+Shift+N
+3. Try different browser (Firefox, Edge)
+
+FILES:
+- docker-rebuild.cmd = Full rebuild (recommended)
+- simple-rebuild.cmd = Quick rebuild
+- verify-update.bat = Check if update worked
+
+DOCKER COMMANDS:
+- Stop: docker compose down
+- Start: docker compose up -d
+- Logs: docker compose logs -f
+- Status: docker compose ps

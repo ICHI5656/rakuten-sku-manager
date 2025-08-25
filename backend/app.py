@@ -173,7 +173,11 @@ async def process_csv(request: ProcessRequest):
         df = rakuten_processor.process_csv(
             df, 
             devices_to_add=request.devices_to_add,
-            devices_to_remove=request.devices_to_remove
+            devices_to_remove=request.devices_to_remove,
+            add_position=request.add_position,
+            after_device=request.after_device,
+            custom_device_order=request.custom_device_order,
+            insert_index=request.insert_index
         )
         
         # Validate constraints

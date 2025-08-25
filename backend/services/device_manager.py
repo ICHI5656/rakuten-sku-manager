@@ -17,22 +17,46 @@ class DeviceManager:
         """Extract unique device names from DataFrame"""
         devices = set()
         
-        # Find which column name exists in the dataframe
-        self.device_column = None
-        for col_name in self.device_columns:
-            if col_name in df.columns:
-                self.device_column = col_name
-                break
+        print(f"[DEBUG] Extracting devices from DataFrame with {len(df)} rows")
         
-        if self.device_column and self.device_column in df.columns:
-            # Get unique devices from variation column
-            device_values = df[self.device_column].dropna().unique()
-            # Filter out empty strings
-            device_values = [d for d in device_values if d and str(d).strip()]
+        # Try to extract from variation definition column (parent rows)
+        var_def_col = 'バリエーション2選択肢定義'
+        if var_def_col in df.columns:
+            print(f"[DEBUG] Found {var_def_col} column")
+            for value in df[var_def_col].dropna().unique():
+                if value and str(value).strip():
+                    # Split pipe-delimited list
+                    device_list = [d.strip() for d in str(value).split('|') if d.strip()]
+                    print(f"[DEBUG] Extracted from variation def: {device_list}")
+                    devices.update(device_list)
+        
+        # Also extract from SKU rows
+        sku_device_col = 'バリエーション項目選択肢2'
+        if sku_device_col in df.columns:
+            print(f"[DEBUG] Found {sku_device_col} column")
+            device_values = df[sku_device_col].dropna().unique()
+            device_values = [str(d).strip() for d in device_values if d and str(d).strip()]
+            print(f"[DEBUG] Extracted from SKU rows: {device_values}")
             devices.update(device_values)
         
+        # Fallback to old method if neither column exists
+        if not devices:
+            print(f"[DEBUG] No devices found, trying fallback method")
+            self.device_column = None
+            for col_name in self.device_columns:
+                if col_name in df.columns:
+                    self.device_column = col_name
+                    break
+            
+            if self.device_column and self.device_column in df.columns:
+                device_values = df[self.device_column].dropna().unique()
+                device_values = [d for d in device_values if d and str(d).strip()]
+                devices.update(device_values)
+        
         # Sort and return as list
-        return sorted(list(devices))
+        result = sorted(list(devices))
+        print(f"[DEBUG] Final extracted devices: {result}")
+        return result
     
     def add_devices(self, df: pd.DataFrame, devices_to_add: List[str]) -> pd.DataFrame:
         """Add new devices to DataFrame"""

@@ -16,6 +16,10 @@ class ProcessRequest(BaseModel):
     devices_to_add: Optional[List[str]] = []
     devices_to_remove: Optional[List[str]] = []
     output_format: OutputFormat = OutputFormat.SINGLE
+    add_position: Optional[str] = "start"  # "start", "end", "after", "custom", or "final_order"
+    after_device: Optional[str] = None
+    custom_device_order: Optional[List[str]] = None  # カスタム順序
+    insert_index: Optional[int] = None  # カスタム順序での挿入位置
 
 class ProcessingOptions(BaseModel):
     maintain_column_order: bool = True
