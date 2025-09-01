@@ -661,32 +661,50 @@ async def batch_upload_csv(files: List[UploadFile] = File(...)):
                         if device not in existing:
                             all_product_devices[product_id].append(device)
     
-    # Find the most complete device list to use as the reference order
-    # Use the longest device list from product devices as the base
-    reference_list = []
-    if all_product_devices:
-        # Find the product with the most devices
-        max_devices = 0
-        for product_id, devices in all_product_devices.items():
-            if len(devices) > max_devices:
-                max_devices = len(devices)
-                reference_list = devices.copy()
+    # Find the most common device list order pattern as reference
+    # Count how many products use each device list order pattern
+    device_order_patterns = {}
     
-    # If no product devices or empty, use the longest file device list
-    if not reference_list and file_device_lists:
-        reference_list = max(file_device_lists, key=len)
+    # Collect from products to find common order patterns
+    for product_id, devices in all_product_devices.items():
+        if devices:
+            # Create a hashable key from the device list order
+            order_key = tuple(devices)
+            if order_key not in device_order_patterns:
+                device_order_patterns[order_key] = {
+                    'devices': devices,
+                    'count': 0,
+                    'products': []
+                }
+            device_order_patterns[order_key]['count'] += 1
+            device_order_patterns[order_key]['products'].append(product_id)
+            logger.info(f"Product {product_id}: {len(devices)} devices - First 3: {devices[:3] if devices else []}")
+    
+    # Select the most common device order pattern as reference
+    reference_list = []
+    if device_order_patterns:
+        # Find the order pattern used by most products
+        most_common_pattern = max(device_order_patterns.values(), key=lambda x: x['count'])
+        reference_list = most_common_pattern['devices']
+        logger.info(f"Selected reference order from pattern used by {most_common_pattern['count']} products")
+        logger.info(f"Reference list order (first 5): {reference_list[:5] if len(reference_list) >= 5 else reference_list}")
+    else:
+        # Fallback to first file's device list if no product patterns found
+        if file_device_lists and file_device_lists[0]:
+            reference_list = file_device_lists[0]
+            logger.info(f"Using first file's device order as reference: {reference_list[:5] if len(reference_list) >= 5 else reference_list}")
     
     # Build the final all_devices list based on reference order
     all_devices = []
     seen_devices = set()
     
-    # First add devices from reference list
+    # First add devices in reference order
     for device in reference_list:
         if device not in seen_devices:
             all_devices.append(device)
             seen_devices.add(device)
     
-    # Then add any remaining devices from all files
+    # Then add any remaining devices from all files (preserving their order)
     for file_devices in file_device_lists:
         for device in file_devices:
             if device not in seen_devices:
