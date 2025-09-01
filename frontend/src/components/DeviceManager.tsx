@@ -25,8 +25,10 @@ import {
   RadioGroup,
   FormControlLabel,
   Radio,
-  Alert
+  Alert,
+  AlertTitle
 } from '@mui/material';
+import Autocomplete from '@mui/material/Autocomplete';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -48,7 +50,9 @@ interface DeviceManagerProps {
     position?: 'start' | 'end' | 'after' | 'custom' | 'final_order', 
     afterDevice?: string,
     customDeviceOrder?: string[],
-    insertIndex?: number
+    insertIndex?: number,
+    deviceBrand?: string,
+    deviceAttributes?: Array<{device: string, attribute_value?: string, size_category?: string}>
   ) => void;
   onBack: () => void;
 }
@@ -67,13 +71,34 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
   const [finalDeviceOrder, setFinalDeviceOrder] = useState<string[] | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<{productId: string, devices: string[]} | null>(null);
   
+  // Database integration states
+  const [showDatabaseDialog, setShowDatabaseDialog] = useState(false);
+  const [pendingDevice, setPendingDevice] = useState('');
+  const [deviceBrand, setDeviceBrand] = useState('');
+  const [deviceAttributeValue, setDeviceAttributeValue] = useState('');
+  const [deviceSizeCategory, setDeviceSizeCategory] = useState('');
+  const [isSavingToDatabase, setIsSavingToDatabase] = useState(false);
+  const [deviceAttributesMap, setDeviceAttributesMap] = useState<Map<string, {attribute_value: string, size_category: string}>>(new Map());
+  
   // Debug log
+  console.log('DeviceManager received devices:', JSON.stringify(devices, null, 2));
   console.log('DeviceManager received productDevices:', productDevices);
-  console.log('Number of products:', productDevices ? Object.keys(productDevices).length : 0);
-  console.log('[DEBUG] devices prop:', devices);
-  console.log('[DEBUG] devices length:', devices ? devices.length : 0);
-  console.log('[DEBUG] devices type:', typeof devices);
-  console.log('[DEBUG] Is devices an array?', Array.isArray(devices));
+  
+  // 順序確認用のデバッグログ
+  if (devices && devices.length > 0) {
+    console.log('Device order in DeviceManager:');
+    devices.forEach((device, index) => {
+      console.log(`  ${index + 1}. ${device}`);
+    });
+    // 配列の最初と最後を確認
+    console.log('First device:', devices[0]);
+    console.log('Last device:', devices[devices.length - 1]);
+  }
+  // console.log('Number of products:', productDevices ? Object.keys(productDevices).length : 0);
+  // console.log('[DEBUG] devices prop:', devices);
+  // console.log('[DEBUG] devices length:', devices ? devices.length : 0);
+  // console.log('[DEBUG] devices type:', typeof devices);
+  // console.log('[DEBUG] Is devices an array?', Array.isArray(devices));
   
   // 商品間の機種の違いを検出
   const deviceDifferences: Record<string, string[]> = {};
@@ -110,13 +135,119 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
     if (newDevice.trim()) {
       // カンマ区切りで複数機種を処理
       const devices = newDevice.split(',').map(d => d.trim()).filter(d => d);
-      const uniqueNewDevices = devices.filter(d => !devicesToAdd.includes(d));
       
-      if (uniqueNewDevices.length > 0) {
-        setDevicesToAdd(prev => [...prev, ...uniqueNewDevices]);
-        setNewDevice('');
+      // 単一デバイスの場合、データベース登録ダイアログを表示
+      if (devices.length === 1) {
+        const deviceName = devices[0];
+        setPendingDevice(deviceName);
+        
+        // デバイス名からブランドを推測
+        const lowerName = deviceName.toLowerCase();
+        let suggestedBrand = 'その他';
+        if (lowerName.includes('iphone')) suggestedBrand = 'iPhone';
+        else if (lowerName.includes('xperia') || lowerName.includes('so-')) suggestedBrand = 'Xperia';
+        else if (lowerName.includes('aquos') || lowerName.includes('sh-')) suggestedBrand = 'AQUOS';
+        else if (lowerName.includes('galaxy')) suggestedBrand = 'Galaxy';
+        else if (lowerName.includes('arrows')) suggestedBrand = 'ARROWS';
+        else if (lowerName.includes('huawei') || lowerName.includes('p30') || lowerName.includes('p40')) suggestedBrand = 'Huawei';
+        else if (lowerName.includes('pixel')) suggestedBrand = 'Pixel';
+        else if (lowerName.includes('oppo')) suggestedBrand = 'OPPO';
+        else if (lowerName.includes('xiaomi') || lowerName.includes('mi ') || lowerName.includes('redmi')) suggestedBrand = 'Xiaomi';
+        
+        setDeviceBrand(suggestedBrand);
+        setDeviceAttributeValue(deviceName); // デフォルトで機種名と同じ
+        setShowDatabaseDialog(true);
+      } else {
+        // 複数デバイスの場合は直接追加
+        const uniqueNewDevices = devices.filter(d => !devicesToAdd.includes(d));
+        if (uniqueNewDevices.length > 0) {
+          setDevicesToAdd(prev => [...prev, ...uniqueNewDevices]);
+          setNewDevice('');
+        }
       }
     }
+  };
+  
+  const handleDatabaseSave = async () => {
+    console.log('handleDatabaseSave called with:', {
+      pendingDevice,
+      deviceBrand,
+      deviceAttributeValue,
+      deviceSizeCategory
+    });
+    
+    if (!pendingDevice || !deviceBrand || !deviceAttributeValue) {
+      alert('デバイス名、ブランド、属性値は必須項目です');
+      return;
+    }
+    
+    setIsSavingToDatabase(true);
+    try {
+      // データベースに保存
+      const requestBody = {
+        brand: deviceBrand,
+        device_name: pendingDevice,
+        attribute_value: deviceAttributeValue,
+        size_category: deviceSizeCategory || '',  // 空の場合は空文字列
+        usage_count: 0
+      };
+      console.log('Sending request to API:', requestBody);
+      
+      const response = await fetch('/api/product-attributes/devices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('API error response:', error);
+        throw new Error(error.detail || 'データベース保存に失敗しました');
+      }
+      
+      const savedDevice = await response.json();
+      console.log('Device saved successfully:', savedDevice);
+      
+      // 成功したらデバイスを追加
+      if (!devicesToAdd.includes(pendingDevice)) {
+        setDevicesToAdd([...devicesToAdd, pendingDevice]);
+        // デバイスの属性情報を保存
+        const newMap = new Map(deviceAttributesMap);
+        newMap.set(pendingDevice, {
+          attribute_value: deviceAttributeValue,
+          size_category: deviceSizeCategory
+        });
+        setDeviceAttributesMap(newMap);
+      }
+      
+      // ダイアログを閉じてリセット
+      setShowDatabaseDialog(false);
+      setPendingDevice('');
+      setDeviceBrand('');
+      setDeviceAttributeValue('');
+      setDeviceSizeCategory('');
+      setNewDevice('');
+    } catch (error: any) {
+      console.error('Error in handleDatabaseSave:', error);
+      alert(`エラー: ${error.message}`);
+    } finally {
+      setIsSavingToDatabase(false);
+    }
+  };
+  
+  const handleSkipDatabase = () => {
+    // データベース保存をスキップして直接追加
+    if (pendingDevice && !devicesToAdd.includes(pendingDevice)) {
+      setDevicesToAdd([...devicesToAdd, pendingDevice]);
+    }
+    setShowDatabaseDialog(false);
+    setPendingDevice('');
+    setDeviceBrand('');
+    setDeviceAttributeValue('');
+    setDeviceSizeCategory('');
+    setNewDevice('');
   };
 
   const handleRemoveNewDevice = (device: string) => {
@@ -131,17 +262,29 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
     console.log('  addPosition:', addPosition);
     console.log('  afterDevice:', afterDevice);
     
+    // deviceAttributesMapから配列形式に変換
+    const deviceAttributesArray = devicesToAdd.map(device => {
+      const attrs = deviceAttributesMap.get(device);
+      return {
+        device: device,
+        attribute_value: attrs?.attribute_value || device,  // フォールバック
+        size_category: attrs?.size_category || ''
+      };
+    });
+    
+    console.log('[DEBUG] deviceAttributesArray:', deviceAttributesArray);
+    
     if (finalDeviceOrder) {
       // 完全カスタマイズモードの場合
       const existingSet = new Set(devices);
       const newDevicesInOrder = finalDeviceOrder.filter(d => !existingSet.has(d));
       const removedDevices = devices.filter(d => !finalDeviceOrder.includes(d));
       
-      onNext(newDevicesInOrder, removedDevices, 'final_order', undefined, finalDeviceOrder, undefined);
+      onNext(newDevicesInOrder, removedDevices, 'final_order', undefined, finalDeviceOrder, undefined, deviceBrand, deviceAttributesArray);
     } else if (customDeviceOrder) {
-      onNext(devicesToAdd, devicesToRemove, 'custom', undefined, customDeviceOrder, insertIndex);
+      onNext(devicesToAdd, devicesToRemove, 'custom', undefined, customDeviceOrder, insertIndex, deviceBrand, deviceAttributesArray);
     } else {
-      onNext(devicesToAdd, devicesToRemove, addPosition, afterDevice);
+      onNext(devicesToAdd, devicesToRemove, addPosition, afterDevice, undefined, undefined, deviceBrand, deviceAttributesArray);
     }
   };
 
@@ -152,12 +295,23 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
     const groups: { [key: string]: { devices: string[], products: string[] } } = {};
     
     Object.entries(productDevices).forEach(([productId, deviceList]) => {
-      // 機種リストをソートして文字列化（比較用のキーを作成）
-      const deviceKey = [...deviceList].sort().join('|');
+      // 機種リストを文字列化（順序を保持したまま比較用のキーを作成）
+      const deviceKey = deviceList.join('|');
       
       if (!groups[deviceKey]) {
+        // グローバルな機種リスト（devices）の順序に従ってソート
+        const sortedDevices = devices ? 
+          [...deviceList].sort((a, b) => {
+            const indexA = devices.indexOf(a);
+            const indexB = devices.indexOf(b);
+            // デバイスが見つからない場合は元の順序を保持
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+          }) : deviceList;
+        
         groups[deviceKey] = {
-          devices: deviceList,
+          devices: sortedDevices,
           products: []
         };
       }
@@ -174,7 +328,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
     <Box>
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: 2, minHeight: '400px', display: 'flex', flexDirection: 'column' }}>
             <Typography variant="h6" gutterBottom>
               既存の機種一覧
             </Typography>
@@ -182,98 +336,111 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
               削除する機種にチェックを入れてください
             </Typography>
             
-            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-              {/* 強制デバッグ表示 */}
-              <Typography variant="body2" sx={{ 
-                p: 1, 
-                mb: 2, 
-                backgroundColor: '#ffeb3b', 
-                border: '2px solid #f57c00',
-                borderRadius: 1
-              }}>
-                🐛 DEBUG: productDevices={productDevices ? 'EXISTS' : 'NULL'} | 
-                keys={productDevices ? Object.keys(productDevices).length : 0} |
-                devices={devices.length}
-              </Typography>
-              
-              {/* 条件を緩和してテスト */}
-              {productDevices && Object.keys(productDevices).length >= 1 ? (
+            <Box sx={{ 
+              flex: 1,
+              maxHeight: devices && devices.length > 20 ? '800px' : 'none',
+              overflow: devices && devices.length > 20 ? 'auto' : 'visible',
+              minHeight: '300px'
+            }}>
+              {/* 商品ごとに異なる機種がある場合のみ別窓表示 */}
+              {productDevices && Object.keys(productDevices).length > 1 && hasMultipleGroups ? (
                 // 商品ごとの機種を別窓で表示する方式
                 <Box>
-                  <Typography variant="h6" sx={{ 
-                    mb: 2,
-                    p: 2,
-                    backgroundColor: '#4caf50',
-                    color: 'white',
-                    textAlign: 'center',
-                    borderRadius: 1
-                  }}>
-                    ✅ 複数商品が検出されました！
-                    {hasMultipleGroups ? '機種リストが異なる商品グループがあります。' : '全商品が同じ機種リストを持っています。'}
-                  </Typography>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    <AlertTitle>商品ごとに異なる機種セットが検出されました</AlertTitle>
+                    商品グループごとに機種リストが異なります。下記から確認してください。
+                  </Alert>
                   
                   {Object.entries(deviceGroups).map(([deviceKey, group], groupIndex) => {
-                    const isOnlyGroup = Object.keys(deviceGroups).length === 1;
                     const hasMultipleProducts = group.products.length > 1;
                     
                     return (
-                      <Paper 
-                        key={deviceKey} 
-                        sx={{ 
-                          p: 2, 
-                          mb: 2,
-                          border: isOnlyGroup ? '1px solid #e0e0e0' : '2px solid #2196f3',
-                          backgroundColor: isOnlyGroup ? 'background.paper' : '#e3f2fd'
-                        }}
-                      >
-                        <Box>
-                          {/* グループヘッダー */}
-                          <Box sx={{ mb: 1 }}>
-                            <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 'bold' }}>
-                              {isOnlyGroup ? '全商品共通の機種リスト' : `機種グループ ${groupIndex + 1}`}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {hasMultipleProducts 
-                                ? `対象商品: ${group.products.join(', ')}` 
-                                : `対象商品: ${group.products[0]}`}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              機種数: {group.devices.length}機種
-                            </Typography>
-                          </Box>
-                          
-                          {/* 機種一覧表示ボタン（グループに1つだけ） */}
-                          <Button
+                      <Paper key={groupIndex} elevation={2} sx={{ p: 2, mb: 2 }}>
+                        <Typography variant="subtitle1" gutterBottom>
+                          {hasMultipleProducts 
+                            ? `📦 ${group.products.length}個の商品が同じ機種セット`
+                            : `📦 商品: ${group.products[0]}`
+                          }
+                        </Typography>
+                        
+                        {hasMultipleProducts && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            商品: {group.products.slice(0, 3).join(', ')}
+                            {group.products.length > 3 && ` 他${group.products.length - 3}個`}
+                          </Typography>
+                        )}
+                        
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip label={`${group.devices.length}機種`} size="small" color="primary" />
+                          <Button 
+                            size="small" 
                             variant="outlined"
-                            fullWidth
-                            startIcon={<OpenInNewIcon />}
                             onClick={() => setSelectedProduct({
                               productId: group.products.join(', '),
                               devices: group.devices
                             })}
                           >
-                            この機種リストを確認 ({group.devices.length}機種)
+                            この機種リストを確認
                           </Button>
                         </Box>
                       </Paper>
                     );
                   })}
                   
-                  {/* 全体の機種を統合表示 */}
-                  <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
                     全機種統合リスト (削除選択用)
                   </Typography>
+                  
+                  <List>
+                    {devices.map((device, index) => (
+                      <ListItem
+                        key={`${device}-${index}`}
+                        dense
+                        button
+                        onClick={() => handleToggleRemove(device)}
+                        sx={{
+                          backgroundColor: devicesToRemove.includes(device) 
+                            ? 'error.light' 
+                            : 'transparent',
+                          '&:hover': {
+                            backgroundColor: devicesToRemove.includes(device)
+                              ? 'error.light'
+                              : 'action.hover'
+                          }
+                        }}
+                      >
+                        <ListItemIcon>
+                          <Checkbox
+                            edge="start"
+                            checked={devicesToRemove.includes(device)}
+                            tabIndex={-1}
+                            disableRipple
+                          />
+                        </ListItemIcon>
+                        <ListItemText 
+                          primary={`${index + 1}. ${device}`}
+                          secondary={
+                            deviceDifferences[Object.keys(deviceDifferences).find(pid => 
+                              deviceDifferences[pid].includes(device)
+                            ) || '']
+                              ? '⚠️ 一部の商品のみ'
+                              : null
+                          }
+                        />
+                        {devicesToRemove.includes(device) && (
+                          <DeleteIcon color="error" fontSize="small" />
+                        )}
+                      </ListItem>
+                    ))}
+                  </List>
                 </Box>
-              ) : null}
-              
-              {/* 統合機種リスト または フォールバック */}
-              <Box>
-                {((productDevices && Object.keys(productDevices).length > 0) || !productDevices) && (
-                // フォールバック: 全体の機種リスト
-                <List sx={{ maxHeight: 400, overflow: 'auto' }}>
-                  {devices.map((device) => (
+              ) : devices && devices.length > 0 ? (
+                // 通常のシンプルな機種リスト表示（すべて同じ機種セットの場合）
+                <List>
+                  {devices.map((device, index) => (
                     <ListItem
-                      key={device}
+                      key={`${device}-${index}`}
                       dense
                       button
                       onClick={() => handleToggleRemove(device)}
@@ -298,13 +465,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
                       </ListItemIcon>
                       <ListItemText 
                         primary={device}
-                        primaryTypographyProps={{
-                          style: {
-                            textDecoration: devicesToRemove.includes(device) 
-                              ? 'line-through' 
-                              : 'none'
-                          }
-                        }}
+                        secondary={devicesToRemove.includes(device) ? '削除予定' : ''}
                       />
                       {devicesToRemove.includes(device) && (
                         <DeleteIcon color="error" fontSize="small" />
@@ -312,8 +473,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
                     </ListItem>
                   ))}
                 </List>
-                )}
-              </Box>
+              ) : null}
             </Box>
             
             {devicesToRemove.length > 0 && (
@@ -329,7 +489,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
         </Grid>
 
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: 2, minHeight: '400px', display: 'flex', flexDirection: 'column' }}>
             <Typography variant="h6" gutterBottom>
               新機種追加
             </Typography>
@@ -567,7 +727,6 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
               </Button>
             </Box>
 
-            <Divider sx={{ my: 2 }} />
 
             <Typography variant="subtitle2" gutterBottom>
               追加予定の機種:
@@ -630,6 +789,88 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
           次へ
         </Button>
       </Box>
+
+      {/* データベース登録ダイアログ */}
+      <Dialog
+        open={showDatabaseDialog}
+        onClose={() => setShowDatabaseDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          新機種をデータベースに登録
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            機種「{pendingDevice}」をProduct Attributes 8データベースに登録します。
+          </Alert>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <TextField
+              label="機種名"
+              value={pendingDevice}
+              disabled
+              fullWidth
+            />
+            <FormControl fullWidth required>
+              <InputLabel>ブランド</InputLabel>
+              <Select
+                value={deviceBrand}
+                onChange={(e) => setDeviceBrand(e.target.value)}
+                label="ブランド"
+              >
+                <MenuItem value="iPhone">iPhone</MenuItem>
+                <MenuItem value="Xperia">Xperia</MenuItem>
+                <MenuItem value="AQUOS">AQUOS</MenuItem>
+                <MenuItem value="Galaxy">Galaxy</MenuItem>
+                <MenuItem value="ARROWS">ARROWS</MenuItem>
+                <MenuItem value="HUAWEI">HUAWEI</MenuItem>
+                <MenuItem value="Pixel">Pixel</MenuItem>
+                <MenuItem value="OPPO">OPPO</MenuItem>
+                <MenuItem value="Xiaomi">Xiaomi</MenuItem>
+                <MenuItem value="その他">その他</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label="属性値 (Product Attribute 8)"
+              value={deviceAttributeValue}
+              onChange={(e) => setDeviceAttributeValue(e.target.value)}
+              fullWidth
+              required
+              helperText="楽天RMSで表示される属性値"
+            />
+            <Autocomplete
+              freeSolo
+              options={['Sサイズ', 'Mサイズ', 'Lサイズ', 'XLサイズ', 'フリーサイズ', 'その他']}
+              value={deviceSizeCategory}
+              onChange={(_, newValue) => setDeviceSizeCategory(newValue || '')}
+              onInputChange={(_, newInputValue) => setDeviceSizeCategory(newInputValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="サイズカテゴリ"
+                  required
+                  helperText="例: Sサイズ, Mサイズ, Lサイズ"
+                />
+              )}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleSkipDatabase} color="inherit">
+            スキップ
+          </Button>
+          <Button onClick={() => setShowDatabaseDialog(false)}>
+            キャンセル
+          </Button>
+          <Button 
+            onClick={handleDatabaseSave} 
+            variant="contained" 
+            disabled={isSavingToDatabase || !deviceBrand || !deviceAttributeValue}
+          >
+            データベースに保存して追加
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 完全カスタマイズモーダル */}
       <Dialog

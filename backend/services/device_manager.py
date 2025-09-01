@@ -15,29 +15,38 @@ class DeviceManager:
     
     def extract_devices(self, df: pd.DataFrame) -> List[str]:
         """Extract unique device names from DataFrame"""
-        devices = set()
+        devices = []  # Use list to maintain order
+        seen = set()  # Track seen devices to avoid duplicates
         
         print(f"[DEBUG] Extracting devices from DataFrame with {len(df)} rows")
         
         # Try to extract from variation definition column (parent rows)
+        # This should maintain the original order from the CSV
         var_def_col = 'バリエーション2選択肢定義'
         if var_def_col in df.columns:
             print(f"[DEBUG] Found {var_def_col} column")
-            for value in df[var_def_col].dropna().unique():
+            # Process in order of appearance in the DataFrame
+            for value in df[var_def_col].dropna():
                 if value and str(value).strip():
-                    # Split pipe-delimited list
+                    # Split pipe-delimited list and maintain order
                     device_list = [d.strip() for d in str(value).split('|') if d.strip()]
                     print(f"[DEBUG] Extracted from variation def: {device_list}")
-                    devices.update(device_list)
+                    for device in device_list:
+                        if device not in seen:
+                            devices.append(device)
+                            seen.add(device)
         
-        # Also extract from SKU rows
+        # Also extract from SKU rows (if not already found)
         sku_device_col = 'バリエーション項目選択肢2'
         if sku_device_col in df.columns:
             print(f"[DEBUG] Found {sku_device_col} column")
-            device_values = df[sku_device_col].dropna().unique()
-            device_values = [str(d).strip() for d in device_values if d and str(d).strip()]
-            print(f"[DEBUG] Extracted from SKU rows: {device_values}")
-            devices.update(device_values)
+            # Process in order of appearance
+            for value in df[sku_device_col].dropna():
+                device = str(value).strip()
+                if device and device not in seen:
+                    devices.append(device)
+                    seen.add(device)
+                    print(f"[DEBUG] Added from SKU row: {device}")
         
         # Fallback to old method if neither column exists
         if not devices:
@@ -49,14 +58,15 @@ class DeviceManager:
                     break
             
             if self.device_column and self.device_column in df.columns:
-                device_values = df[self.device_column].dropna().unique()
-                device_values = [d for d in device_values if d and str(d).strip()]
-                devices.update(device_values)
+                for value in df[self.device_column].dropna():
+                    device = str(value).strip()
+                    if device and device not in seen:
+                        devices.append(device)
+                        seen.add(device)
         
-        # Sort and return as list
-        result = sorted(list(devices))
-        print(f"[DEBUG] Final extracted devices: {result}")
-        return result
+        # Return list maintaining original order
+        print(f"[DEBUG] Final extracted devices (order preserved): {devices}")
+        return devices
     
     def add_devices(self, df: pd.DataFrame, devices_to_add: List[str]) -> pd.DataFrame:
         """Add new devices to DataFrame"""

@@ -18,6 +18,9 @@ from services.sku_manager import SKUManager
 from services.device_manager import DeviceManager
 from services.validator import Validator
 from services.rakuten_processor import RakutenCSVProcessor
+from services.batch_processor import BatchProcessor
+from database_api import router as database_router
+from product_attributes_api_v2 import router as product_attributes_router
 from models.schemas import ProcessRequest, DeviceAction, ProcessingOptions
 
 # ロギング設定
@@ -37,10 +40,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "DELETE", "PUT"],
     allow_headers=["*"],
     max_age=3600,
 )
+
+# Include database routers
+app.include_router(database_router)
+app.include_router(product_attributes_router)
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = Path("/app/data")
@@ -56,6 +63,7 @@ sku_manager = SKUManager(STATE_DIR / "sku_counters.json")
 device_manager = DeviceManager()
 validator = Validator()
 rakuten_processor = RakutenCSVProcessor(STATE_DIR / "sku_counters.json")
+batch_processor = BatchProcessor(STATE_DIR)
 
 @app.get("/")
 async def root():
@@ -163,8 +171,255 @@ async def process_csv(request: ProcessRequest):
     print(f"Processing file: {file_path}")
     print(f"Devices to add: {request.devices_to_add}")
     print(f"Devices to remove: {request.devices_to_remove}")
+    if request.device_brand:
+        print(f"Device brand: {request.device_brand}")
     
     try:
+        # Product Attributes 8データベースから各デバイスの属性値を取得
+        device_db_attributes = {}
+        # 新規追加デバイスと既存デバイスの両方を対象にする
+        all_devices_to_check = request.devices_to_add if request.devices_to_add else []
+        
+        # CSVファイルから既存デバイスを取得して追加
+        try:
+            df = csv_processor.read_csv(file_path)
+            existing_devices = device_manager.extract_devices(df)
+            if existing_devices:
+                all_devices_to_check.extend(existing_devices)
+                # 重複を削除
+                all_devices_to_check = list(set(all_devices_to_check))
+        except Exception as e:
+            print(f"Error reading existing devices: {e}")
+        
+        if all_devices_to_check:
+            try:
+                import sqlite3
+                
+                # Product Attributes 8データベースから属性値を取得
+                db_path = '/app/product_attributes_new.db'
+                
+                if os.path.exists(db_path):
+                    conn = sqlite3.connect(db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    
+                    # すべてのデバイスの属性値を取得（新規追加＋既存）
+                    for device_name in all_devices_to_check:
+                        # デバイス名を文字列に変換（数値も処理）
+                        device_name_str = str(device_name)
+                        # デバイス名で検索
+                        cursor.execute("""
+                            SELECT device_name, attribute_value, size_category, brand
+                            FROM device_attributes 
+                            WHERE device_name = ?
+                            ORDER BY usage_count DESC, updated_at DESC
+                            LIMIT 1
+                        """, (device_name_str,))
+                        
+                        device_row = cursor.fetchone()
+                        
+                        if device_row:
+                            # キーも文字列に統一
+                            device_db_attributes[device_name_str] = {
+                                'attribute_value': device_row['attribute_value'],
+                                'size_category': device_row['size_category'],
+                                'brand': device_row['brand']
+                            }
+                            print(f"[DB] Found attributes for {device_name_str}: {device_row['attribute_value']}")
+                        else:
+                            # 部分一致で再検索
+                            cursor.execute("""
+                                SELECT device_name, attribute_value, size_category, brand
+                                FROM device_attributes 
+                                WHERE device_name LIKE ?
+                                ORDER BY usage_count DESC, updated_at DESC
+                                LIMIT 1
+                            """, (f"%{device_name_str}%",))
+                            
+                            device_row = cursor.fetchone()
+                            if device_row:
+                                device_db_attributes[device_name_str] = {
+                                    'attribute_value': device_row['attribute_value'],
+                                    'size_category': device_row['size_category'],
+                                    'brand': device_row['brand']
+                                }
+                                print(f"[DB] Found partial match for {device_name_str}: {device_row['attribute_value']}")
+                            else:
+                                print(f"[DB] No attributes found for {device_name_str}")
+                    
+                    conn.close()
+                
+            except Exception as e:
+                print(f"Error fetching device attributes from database: {e}")
+        
+        # device_attributesをマージ（UIからの入力を優先、DBの値をフォールバック）
+        final_device_attributes = []
+        if request.device_attributes:
+            # UIから送信された属性情報を使用
+            for attr in request.device_attributes:
+                # DeviceAttributeInfoオブジェクトからプロパティにアクセス
+                device_name = attr.device
+                final_attr = {
+                    'device': device_name,
+                    'attribute_value': attr.attribute_value or '',
+                    'size_category': attr.size_category or ''
+                }
+                
+                # UIで未設定の場合はDBの値を使用
+                if device_name in device_db_attributes:
+                    db_attr = device_db_attributes[device_name]
+                    if not final_attr['attribute_value']:
+                        final_attr['attribute_value'] = db_attr['attribute_value']
+                    if not final_attr['size_category']:
+                        final_attr['size_category'] = db_attr['size_category']
+                
+                final_device_attributes.append(final_attr)
+        else:
+            # UIからの入力がない場合、DBの値を使用
+            if request.devices_to_add:
+                for device_name in request.devices_to_add:
+                    if device_name in device_db_attributes:
+                        db_attr = device_db_attributes[device_name]
+                        final_device_attributes.append({
+                            'device': device_name,
+                            'attribute_value': db_attr['attribute_value'],
+                            'size_category': db_attr['size_category']
+                        })
+                    else:
+                        # DBにもない場合はデバイス名をそのまま使用
+                        final_device_attributes.append({
+                            'device': device_name,
+                            'attribute_value': device_name,  # フォールバック
+                            'size_category': ''
+                        })
+        
+        # 既存デバイスの属性値もfinal_device_attributesに追加（新規追加以外のデバイス）
+        added_devices = set([str(attr['device']) for attr in final_device_attributes])
+        for device_name, db_attr in device_db_attributes.items():
+            if device_name not in added_devices:
+                final_device_attributes.append({
+                    'device': device_name,  # 文字列として保存
+                    'attribute_value': db_attr['attribute_value'],
+                    'size_category': db_attr['size_category']
+                })
+        
+        print(f"[DEBUG] Final device attributes: {final_device_attributes}")
+        
+        # ブランドに基づいて属性値を取得（旧処理、互換性のため残す）
+        brand_attributes = []
+        if request.device_brand and request.devices_to_add:
+            try:
+                # データベースから取得できなかった場合は、ハードコーディングされた属性値を使用（フォールバック）
+                if not brand_attributes:
+                    # ブランドごとに適切な属性値を設定
+                    brand_attribute_mapping = {
+                        'Huawei': [
+                            'amicoco|ファーウェイ|アップル',
+                            'amicoco|ファーウェイ|グーグル',
+                            'amicoco|ファーウェイ|ソニー',
+                            'amicoco|ファーウェイ|原セラ',
+                            'amicoco|ファーウェイ|ASUS',
+                            'amicoco|ファーウェイ|シャープ',
+                            'amicoco|ファーウェイ|富士通',
+                            'amicoco|ファーウェイ|FCNT',
+                            'amicoco|ファーウェイ|楽天モバイル',
+                            'amicoco|ファーウェイ|サムスン',
+                            'amicoco|ファーウェイ|シャオミ',
+                            'amicoco|ファーウェイ|オッポ'
+                        ],
+                        'huawei': [
+                            'amicoco|ファーウェイ|アップル',
+                            'amicoco|ファーウェイ|グーグル',
+                            'amicoco|ファーウェイ|ソニー',
+                            'amicoco|ファーウェイ|原セラ',
+                            'amicoco|ファーウェイ|ASUS',
+                            'amicoco|ファーウェイ|シャープ',
+                            'amicoco|ファーウェイ|富士通',
+                            'amicoco|ファーウェイ|FCNT',
+                            'amicoco|ファーウェイ|楽天モバイル',
+                            'amicoco|ファーウェイ|サムスン',
+                            'amicoco|ファーウェイ|シャオミ',
+                            'amicoco|ファーウェイ|オッポ'
+                        ],
+                        'iPhone': [
+                            'amicoco|アップル|iPhone',
+                            'amicoco|アップル|Pro',
+                            'amicoco|アップル|Plus',
+                            'amicoco|アップル|ProMax',
+                            'amicoco|アップル|mini'
+                        ],
+                        'Galaxy': [
+                            'amicoco|サムスン|Galaxy',
+                            'amicoco|サムスン|Note',
+                            'amicoco|サムスン|Ultra',
+                            'amicoco|サムスン|Plus'
+                        ],
+                        'Xperia': [
+                            'amicoco|ソニー|Xperia',
+                            'amicoco|ソニー|1',
+                            'amicoco|ソニー|5',
+                            'amicoco|ソニー|10',
+                            'amicoco|ソニー|Ace'
+                        ],
+                        'AQUOS': [
+                            'amicoco|シャープ|AQUOS',
+                            'amicoco|シャープ|sense',
+                            'amicoco|シャープ|wish',
+                            'amicoco|シャープ|R'
+                        ],
+                        'Pixel': [
+                            'amicoco|グーグル|Pixel',
+                            'amicoco|グーグル|Pro',
+                            'amicoco|グーグル|a'
+                        ],
+                        'Xiaomi': [
+                            'amicoco|シャオミ|Xiaomi',
+                            'amicoco|シャオミ|Redmi',
+                            'amicoco|シャオミ|Mi',
+                            'amicoco|シャオミ|Note'
+                        ],
+                        'OPPO': [
+                            'amicoco|オッポ|OPPO',
+                            'amicoco|オッポ|Reno',
+                            'amicoco|オッポ|Find',
+                            'amicoco|オッポ|A'
+                        ],
+                        'OnePlus': [
+                            'amicoco|ワンプラス|OnePlus',
+                            'amicoco|ワンプラス|Pro',
+                            'amicoco|ワンプラス|Nord'
+                        ],
+                        'iPad': [
+                            'amicoco|アップル|iPad',
+                            'amicoco|アップル|iPadPro',
+                            'amicoco|アップル|iPadAir',
+                            'amicoco|アップル|iPadmini'
+                        ],
+                        'Surface': [
+                            'amicoco|マイクロソフト|Surface',
+                            'amicoco|マイクロソフト|Pro',
+                            'amicoco|マイクロソフト|Go',
+                            'amicoco|マイクロソフト|Laptop'
+                        ]
+                    }
+                    
+                    # ブランドに対応する属性値を取得
+                    if request.device_brand in brand_attribute_mapping:
+                        brand_attributes = brand_attribute_mapping[request.device_brand]
+                    else:
+                        # デフォルトの属性値
+                        brand_attributes = [
+                            'amicoco|その他|スマートフォン',
+                            'amicoco|その他|タブレット',
+                            'amicoco|その他|デバイス'
+                        ]
+                    
+                    print(f"Using fallback attributes for brand {request.device_brand}: {len(brand_attributes)} attributes")
+                    
+            except Exception as e:
+                print(f"Error fetching brand attributes: {e}")
+                # エラーの場合はデフォルト属性値を使用
+                brand_attributes = []
         
         # Read CSV
         df = csv_processor.read_csv(file_path)
@@ -177,7 +432,9 @@ async def process_csv(request: ProcessRequest):
             add_position=request.add_position,
             after_device=request.after_device,
             custom_device_order=request.custom_device_order,
-            insert_index=request.insert_index
+            insert_index=request.insert_index,
+            brand_attributes=brand_attributes,
+            device_attributes=final_device_attributes
         )
         
         # Validate constraints
@@ -282,6 +539,317 @@ async def cleanup_old_files():
                     deleted_files.append(str(file_path.name))
     
     return {"deleted_files": deleted_files}
+
+@app.post("/api/batch-upload")
+async def batch_upload_csv(files: List[UploadFile] = File(...)):
+    """Upload multiple CSV files for batch processing"""
+    logger.info(f"Batch uploading {len(files)} files")
+    
+    uploaded_files = []
+    errors = []
+    batch_id = datetime.now().strftime("%Y%m%d_%H%M%S_batch")
+    batch_dir = UPLOAD_DIR / batch_id
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    
+    for file in files:
+        if not file.filename.endswith('.csv'):
+            errors.append({
+                'file': file.filename,
+                'error': 'Only CSV files are allowed'
+            })
+            continue
+        
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Remove directory path from filename (for folder uploads)
+            clean_filename = Path(file.filename).name
+            filename = f"{timestamp}_{clean_filename}"
+            file_path = batch_dir / filename
+            
+            logger.info(f"Saving file to: {file_path}")
+            contents = await file.read()
+            with open(file_path, 'wb') as f:
+                f.write(contents)
+            
+            # Verify file was saved
+            if not file_path.exists():
+                logger.error(f"File not saved: {file_path}")
+                raise Exception(f"Failed to save file: {filename}")
+            
+            logger.info(f"File saved successfully: {file_path} (size: {file_path.stat().st_size} bytes)")
+            
+            # Quick analysis
+            df = csv_processor.read_csv(file_path)
+            devices = device_manager.extract_devices(df)
+            
+            # Get product-specific device information (same as single file upload)
+            product_col = '商品管理番号（商品URL）'
+            sku_col = 'SKU管理番号'
+            var_def_col = 'バリエーション2選択肢定義'
+            device_col = 'バリエーション項目選択肢2'
+            
+            product_devices = {}
+            
+            if product_col in df.columns and sku_col in df.columns and var_def_col in df.columns:
+                # 親行から機種リストを取得
+                for idx, row in df.iterrows():
+                    has_product = pd.notna(row.get(product_col))
+                    sku_value = row.get(sku_col)
+                    is_sku_empty = pd.isna(sku_value) or sku_value == ''
+                    
+                    if has_product and is_sku_empty:
+                        # Parent row
+                        product_id = row[product_col]
+                        var_def_value = row.get(var_def_col, None)
+                        
+                        if pd.notna(var_def_value) and var_def_value and str(var_def_value).strip():
+                            # パイプ区切りの機種リストを解析
+                            device_list = [d.strip() for d in str(var_def_value).split('|') if d.strip()]
+                            if device_list:
+                                product_devices[product_id] = device_list
+            
+            # フォールバック: SKU行から取得
+            if not product_devices and device_col in df.columns:
+                current_product = None
+                for _, row in df.iterrows():
+                    if pd.notna(row.get(product_col)) and pd.isna(row.get(sku_col, '')):
+                        current_product = row[product_col]
+                        if current_product not in product_devices:
+                            product_devices[current_product] = []
+                    elif pd.notna(row.get(sku_col, '')) and current_product:
+                        if pd.notna(row.get(device_col, '')):
+                            device_value = row[device_col]
+                            if device_value not in product_devices[current_product]:
+                                product_devices[current_product].append(device_value)
+            
+            uploaded_files.append({
+                'filename': filename,
+                'original_name': file.filename,
+                'path': str(file_path),
+                'devices': devices,
+                'product_devices': product_devices,  # 商品ごとの機種リスト
+                'row_count': len(df),
+                'column_count': len(df.columns)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing file {file.filename}: {e}")
+            errors.append({
+                'file': file.filename,
+                'error': str(e)
+            })
+    
+    # Collect all unique devices while maintaining order
+    # First, collect all product devices from all files
+    all_product_devices = {}  # Aggregate product devices from all files
+    file_device_lists = []  # Store device lists from each file
+    
+    for file_info in uploaded_files:
+        # Store device list from this file
+        if 'devices' in file_info:
+            file_device_lists.append(file_info['devices'])
+        
+        # Merge product devices from each file
+        if 'product_devices' in file_info:
+            for product_id, devices in file_info['product_devices'].items():
+                if product_id not in all_product_devices:
+                    all_product_devices[product_id] = devices
+                else:
+                    # Merge device lists if same product appears in multiple files
+                    existing = set(all_product_devices[product_id])
+                    for device in devices:
+                        if device not in existing:
+                            all_product_devices[product_id].append(device)
+    
+    # Find the most complete device list to use as the reference order
+    # Use the longest device list from product devices as the base
+    reference_list = []
+    if all_product_devices:
+        # Find the product with the most devices
+        max_devices = 0
+        for product_id, devices in all_product_devices.items():
+            if len(devices) > max_devices:
+                max_devices = len(devices)
+                reference_list = devices.copy()
+    
+    # If no product devices or empty, use the longest file device list
+    if not reference_list and file_device_lists:
+        reference_list = max(file_device_lists, key=len)
+    
+    # Build the final all_devices list based on reference order
+    all_devices = []
+    seen_devices = set()
+    
+    # First add devices from reference list
+    for device in reference_list:
+        if device not in seen_devices:
+            all_devices.append(device)
+            seen_devices.add(device)
+    
+    # Then add any remaining devices from all files
+    for file_devices in file_device_lists:
+        for device in file_devices:
+            if device not in seen_devices:
+                all_devices.append(device)
+                seen_devices.add(device)
+    
+    logger.info(f"Collected all devices from batch (order preserved): {all_devices}")
+    logger.info(f"Total unique devices: {len(all_devices)}")
+    logger.info(f"Product-specific devices: {len(all_product_devices)} products")
+    
+    result = {
+        'batch_id': batch_id,
+        'uploaded_files': uploaded_files,
+        'errors': errors,
+        'total_files': len(uploaded_files),
+        'all_devices': all_devices,  # Already a list with order preserved
+        'all_product_devices': all_product_devices  # Aggregated product devices
+    }
+    
+    logger.info(f"Batch upload result: batch_id={batch_id}, total_files={len(uploaded_files)}, unique_devices={len(all_devices)}")
+    
+    return result
+
+@app.post("/api/batch-process")
+async def batch_process_csv(
+    batch_id: str = Form(...),
+    devices_to_add: Optional[str] = Form(None),
+    devices_to_remove: Optional[str] = Form(None),
+    output_format: str = Form('single'),
+    apply_to_all: bool = Form(True)
+):
+    """Process multiple CSV files in batch"""
+    logger.info(f"Batch processing: {batch_id}")
+    logger.info(f"UPLOAD_DIR: {UPLOAD_DIR}")
+    logger.info(f"Looking for batch_dir: {UPLOAD_DIR / batch_id}")
+    
+    # Parse device lists
+    devices_add = json.loads(devices_to_add) if devices_to_add else None
+    devices_remove = json.loads(devices_to_remove) if devices_to_remove else None
+    
+    # Find batch files
+    batch_dir = UPLOAD_DIR / batch_id
+    
+    # List all directories in UPLOAD_DIR for debugging
+    logger.info(f"Contents of UPLOAD_DIR: {list(UPLOAD_DIR.iterdir())}")
+    
+    if not batch_dir.exists():
+        logger.error(f"Batch directory not found: {batch_dir}")
+        # Create empty result for missing batch
+        return {
+            'status': 'error',
+            'message': f'Batch not found: {batch_id}',
+            'batch_id': batch_id,
+            'total_files': 0,
+            'successful_files': 0,
+            'failed_files': 0,
+            'results': []
+        }
+    
+    csv_files = list(batch_dir.glob("*.csv"))
+    if not csv_files:
+        logger.warning(f"No CSV files found in batch: {batch_id}")
+        # Return empty result instead of error
+        return {
+            'status': 'completed',
+            'message': 'No files to process',
+            'batch_id': batch_id,
+            'total_files': 0,
+            'successful_files': 0,
+            'failed_files': 0,
+            'results': []
+        }
+    
+    # Process batch
+    result = await batch_processor.process_batch_files(
+        file_paths=csv_files,
+        devices_to_add=devices_add,
+        devices_to_remove=devices_remove,
+        output_format=output_format,
+        apply_to_all=apply_to_all
+    )
+    
+    return result
+
+@app.get("/api/batch-download/{batch_id}")
+async def download_batch_results(batch_id: str):
+    """Download all processed files from a batch as a zip"""
+    import zipfile
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    logger.info(f"Download request for batch: {batch_id}")
+    
+    status = batch_processor.get_batch_status(batch_id)
+    logger.info(f"Batch status: {status}")
+    
+    if status['status'] == 'not_found':
+        # Try to find files directly in the batch directory as fallback
+        batch_dir = UPLOAD_DIR / batch_id
+        if batch_dir.exists():
+            logger.info(f"Batch directory found: {batch_dir}")
+            # Find all processed files in the directory
+            processed_files = list(batch_dir.glob("*_processed_*.csv"))
+            if processed_files:
+                logger.info(f"Found {len(processed_files)} processed files")
+                # Create zip file
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for file_path in processed_files:
+                        zip_file.write(file_path, file_path.name)
+                
+                zip_buffer.seek(0)
+                
+                return StreamingResponse(
+                    zip_buffer,
+                    media_type='application/zip',
+                    headers={
+                        "Content-Disposition": f"attachment; filename=batch_{batch_id}_results.zip"
+                    }
+                )
+        
+        raise HTTPException(status_code=404, detail="Batch ID not found")
+    
+    if status['status'] != 'completed':
+        logger.warning(f"Batch not completed: {status['status']}")
+        # Continue anyway if we have results
+        if 'results' not in status or not status['results']:
+            raise HTTPException(status_code=400, detail="Batch processing not completed")
+    
+    # Collect all output files
+    output_files = []
+    for result in status.get('results', []):
+        if result['status'] == 'success' and 'output_path' in result:
+            output_path = Path(result['output_path'])
+            if output_path.exists():
+                output_files.append(output_path)
+    
+    if not output_files:
+        raise HTTPException(status_code=404, detail="No output files found")
+    
+    # Create zip file in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path in output_files:
+            zip_file.write(file_path, file_path.name)
+    
+    zip_buffer.seek(0)
+    
+    return StreamingResponse(
+        zip_buffer,
+        media_type='application/zip',
+        headers={
+            "Content-Disposition": f"attachment; filename=batch_{batch_id}_results.zip"
+        }
+    )
+
+@app.get("/api/batch-status/{batch_id}")
+async def get_batch_status(batch_id: str):
+    """Get batch processing status"""
+    status = batch_processor.get_batch_status(batch_id)
+    if status['status'] == 'not_found':
+        raise HTTPException(status_code=404, detail="Batch ID not found")
+    return status
 
 @app.get("/api/status")
 async def get_status():
