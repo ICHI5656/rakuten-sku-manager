@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  rakuten-backend:
+    image: rakuten_sku_manager-backend:latest
+    container_name: rakuten-sku-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - rakuten_data:/app/data
+      - rakuten_db:/app/db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - rakuten-network
+
+  rakuten-frontend:
+    image: rakuten_sku_manager-frontend:latest
+    container_name: rakuten-sku-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - rakuten-backend
+    restart: unless-stopped
+    networks:
+      - rakuten-network
+
+networks:
+  rakuten-network:
+    driver: bridge
+
+volumes:
+  rakuten_data:
+    driver: local
+  rakuten_db:
+    driver: local

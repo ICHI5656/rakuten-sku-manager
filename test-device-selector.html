@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Device Selector Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #deviceList {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .device-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .device-brand {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Device Selector API テスト</h1>
+        
+        <div class="stats" id="stats">
+            <div class="stat-box">
+                <div class="stat-number" id="totalDevices">-</div>
+                <div class="stat-label">総機種数</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="totalBrands">-</div>
+                <div class="stat-label">ブランド数</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="apiStatus">-</div>
+                <div class="stat-label">API状態</div>
+            </div>
+        </div>
+        
+        <div id="status"></div>
+        
+        <div>
+            <button onclick="testAPI()">API テスト実行</button>
+            <button onclick="loadDevices()">機種リスト取得</button>
+            <button onclick="clearDisplay()">表示クリア</button>
+        </div>
+        
+        <div id="deviceList"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = `${new Date().toLocaleTimeString()} - ${message}`;
+        }
+
+        async function testAPI() {
+            updateStatus('API テスト開始...', 'info');
+            
+            try {
+                // Test backend API directly
+                const backendResponse = await fetch('http://localhost:8000/api/product-attributes/devices');
+                if (backendResponse.ok) {
+                    const backendData = await backendResponse.json();
+                    updateStatus(`✅ Backend API: ${backendData.length} devices found`, 'success');
+                    document.getElementById('totalDevices').textContent = backendData.length;
+                    
+                    // Count unique brands
+                    const brands = [...new Set(backendData.map(d => d.brand))];
+                    document.getElementById('totalBrands').textContent = brands.length;
+                } else {
+                    updateStatus(`❌ Backend API error: ${backendResponse.status}`, 'error');
+                }
+                
+                // Test frontend proxy
+                const frontendResponse = await fetch('http://localhost:3000/api/product-attributes/devices');
+                if (frontendResponse.ok) {
+                    const frontendData = await frontendResponse.json();
+                    updateStatus(`✅ Frontend Proxy: ${frontendData.length} devices found`, 'success');
+                    document.getElementById('apiStatus').textContent = '正常';
+                    document.getElementById('apiStatus').style.color = '#28a745';
+                } else {
+                    updateStatus(`❌ Frontend proxy error: ${frontendResponse.status}`, 'error');
+                    document.getElementById('apiStatus').textContent = 'エラー';
+                    document.getElementById('apiStatus').style.color = '#dc3545';
+                }
+                
+            } catch (error) {
+                updateStatus(`❌ エラー: ${error.message}`, 'error');
+                document.getElementById('apiStatus').textContent = 'エラー';
+                document.getElementById('apiStatus').style.color = '#dc3545';
+            }
+        }
+
+        async function loadDevices() {
+            updateStatus('機種リスト取得中...', 'info');
+            const deviceList = document.getElementById('deviceList');
+            deviceList.innerHTML = '<div style="text-align: center;">読み込み中...</div>';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/product-attributes/devices');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const devices = await response.json();
+                updateStatus(`✅ ${devices.length} 件の機種を取得しました`, 'success');
+                
+                // Group by brand
+                const devicesByBrand = {};
+                devices.forEach(device => {
+                    if (!devicesByBrand[device.brand]) {
+                        devicesByBrand[device.brand] = [];
+                    }
+                    devicesByBrand[device.brand].push(device);
+                });
+                
+                // Display devices
+                let html = '<h3>機種リスト (ブランド別)</h3>';
+                for (const [brand, brandDevices] of Object.entries(devicesByBrand)) {
+                    html += `<div style="margin: 10px 0;">`;
+                    html += `<div class="device-brand">${brand} (${brandDevices.length}件)</div>`;
+                    
+                    // Show first 5 devices of each brand
+                    brandDevices.slice(0, 5).forEach(device => {
+                        html += `<div class="device-item">`;
+                        html += `<span>${device.device_name}</span>`;
+                        html += `<span style="color: #6c757d;">${device.attribute_value}</span>`;
+                        html += `</div>`;
+                    });
+                    
+                    if (brandDevices.length > 5) {
+                        html += `<div style="text-align: center; color: #6c757d; font-size: 12px;">... 他 ${brandDevices.length - 5} 件</div>`;
+                    }
+                    html += `</div>`;
+                }
+                
+                deviceList.innerHTML = html;
+                
+            } catch (error) {
+                updateStatus(`❌ エラー: ${error.message}`, 'error');
+                deviceList.innerHTML = `<div style="color: red;">エラー: ${error.message}</div>`;
+            }
+        }
+
+        function clearDisplay() {
+            document.getElementById('deviceList').innerHTML = '';
+            document.getElementById('status').innerHTML = '';
+            updateStatus('表示をクリアしました', 'info');
+        }
+
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            testAPI();
+        });
+    </script>
+</body>
+</html>

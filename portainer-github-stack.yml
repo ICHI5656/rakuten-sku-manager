@@ -1,0 +1,42 @@
+version: '3.8'
+
+# GitHub Container Registryからイメージを取得するバージョン
+# GITHUB_USERNAMEを実際のGitHubユーザー名に置き換えてください
+
+services:
+  rakuten-backend:
+    image: ghcr.io/GITHUB_USERNAME/rakuten-sku-backend:latest
+    container_name: rakuten-sku-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - rakuten_data:/app/data
+      - rakuten_db:/app/db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - rakuten-network
+
+  rakuten-frontend:
+    image: ghcr.io/GITHUB_USERNAME/rakuten-sku-frontend:latest
+    container_name: rakuten-sku-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - BACKEND_URL=http://rakuten-backend:8000
+    depends_on:
+      - rakuten-backend
+    restart: unless-stopped
+    networks:
+      - rakuten-network
+
+networks:
+  rakuten-network:
+    driver: bridge
+
+volumes:
+  rakuten_data:
+    driver: local
+  rakuten_db:
+    driver: local

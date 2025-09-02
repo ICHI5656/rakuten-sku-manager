@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Rakuten SKU Manager - Connection Test</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .pending { color: orange; }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #45a049; }
+        pre {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Rakuten SKU Manager - 接続テスト</h1>
+    
+    <div class="test-section">
+        <h2>ローカル環境テスト (localhost)</h2>
+        <button onclick="testLocal()">ローカルテスト実行</button>
+        <div id="localResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>NAS環境テスト (192.168.24.240)</h2>
+        <button onclick="testNAS()">NASテスト実行</button>
+        <div id="nasResults"></div>
+    </div>
+
+    <script>
+        async function testEndpoint(baseUrl, name) {
+            const results = [];
+            
+            // Test 1: Frontend
+            try {
+                const response = await fetch(baseUrl, { mode: 'no-cors' });
+                results.push(`✅ ${name} Frontend: アクセス可能`);
+            } catch (error) {
+                results.push(`❌ ${name} Frontend: ${error.message}`);
+            }
+
+            // Test 2: Backend API
+            try {
+                const response = await fetch(`${baseUrl.replace(':3000', ':8000')}/docs`, { mode: 'no-cors' });
+                results.push(`✅ ${name} Backend: アクセス可能`);
+            } catch (error) {
+                results.push(`❌ ${name} Backend: ${error.message}`);
+            }
+
+            // Test 3: API Health Check
+            try {
+                const response = await fetch(`${baseUrl.replace(':3000', ':8000')}/api/health`);
+                if (response.ok) {
+                    const data = await response.json();
+                    results.push(`✅ ${name} API Health: ${JSON.stringify(data)}`);
+                } else {
+                    results.push(`⚠️ ${name} API Health: Status ${response.status}`);
+                }
+            } catch (error) {
+                results.push(`❌ ${name} API Health: ${error.message}`);
+            }
+
+            return results;
+        }
+
+        async function testLocal() {
+            const resultsDiv = document.getElementById('localResults');
+            resultsDiv.innerHTML = '<p class="pending">テスト中...</p>';
+            
+            try {
+                const results = await testEndpoint('http://localhost:3000', 'Local');
+                resultsDiv.innerHTML = '<pre>' + results.join('\n') + '</pre>';
+                
+                // Try to load the actual app
+                resultsDiv.innerHTML += '<h3>アプリケーションリンク:</h3>';
+                resultsDiv.innerHTML += '<a href="http://localhost:3000" target="_blank">→ ローカルアプリを開く</a><br>';
+                resultsDiv.innerHTML += '<a href="http://localhost:8000/docs" target="_blank">→ ローカルAPIドキュメントを開く</a>';
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            }
+        }
+
+        async function testNAS() {
+            const resultsDiv = document.getElementById('nasResults');
+            resultsDiv.innerHTML = '<p class="pending">テスト中...</p>';
+            
+            try {
+                const results = await testEndpoint('http://192.168.24.240:3000', 'NAS');
+                resultsDiv.innerHTML = '<pre>' + results.join('\n') + '</pre>';
+                
+                // Try to load the actual app
+                resultsDiv.innerHTML += '<h3>アプリケーションリンク:</h3>';
+                resultsDiv.innerHTML += '<a href="http://192.168.24.240:3000" target="_blank">→ NASアプリを開く</a><br>';
+                resultsDiv.innerHTML += '<a href="http://192.168.24.240:8000/docs" target="_blank">→ NAS APIドキュメントを開く</a>';
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            }
+        }
+
+        // Auto-test on load
+        window.onload = function() {
+            console.log('Connection test page loaded');
+        }
+    </script>
+</body>
+</html>

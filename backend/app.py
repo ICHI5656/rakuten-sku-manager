@@ -1,6 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+# Import Supabase connection
+from supabase_client import supabase_connection
 from typing import List, Optional, Dict
 import pandas as pd
 import polars as pl
@@ -38,9 +40,9 @@ allowed_origins = [origin.strip() for origin in allowed_origins]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],  # 一時的にすべてのオリジンを許可
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "PUT"],
+    allow_methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"],
     allow_headers=["*"],
     max_age=3600,
 )
@@ -67,7 +69,12 @@ batch_processor = BatchProcessor(STATE_DIR)
 
 @app.get("/")
 async def root():
-    return {"message": "Rakuten SKU Manager API", "version": "1.0.0"}
+    mode = "Supabase" if supabase_connection.is_enabled() else "SQLite"
+    return {
+        "message": "Rakuten SKU Manager API",
+        "version": "1.0.0",
+        "database_mode": mode
+    }
 
 @app.post("/api/upload")
 async def upload_csv(file: UploadFile = File(...)):
@@ -164,6 +171,11 @@ async def upload_csv(file: UploadFile = File(...)):
 @app.post("/api/process")
 async def process_csv(request: ProcessRequest):
     """Process CSV with device changes"""
+    print(f"[DEBUG] === PROCESS REQUEST RECEIVED ===")
+    print(f"[DEBUG] Request.devices_to_add: {request.devices_to_add} (type: {type(request.devices_to_add)})")
+    print(f"[DEBUG] Request.device_brand: '{request.device_brand}' (type: {type(request.device_brand)})")
+    print(f"[DEBUG] Request.device_attributes: {request.device_attributes}")
+    
     file_path = UPLOAD_DIR / request.file_id
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -195,13 +207,31 @@ async def process_csv(request: ProcessRequest):
             try:
                 import sqlite3
                 
-                # Product Attributes 8データベースから属性値を取得
-                db_path = '/app/product_attributes_new.db'
-                
-                if os.path.exists(db_path):
-                    conn = sqlite3.connect(db_path)
-                    conn.row_factory = sqlite3.Row
-                    cursor = conn.cursor()
+                # デバイス属性を取得（Supabase優先、SQLiteフォールバック）
+                if supabase_connection.is_enabled():
+                    # Supabase mode
+                    for device_name in all_devices_to_check:
+                        device_name_str = str(device_name)
+                        devices_data = supabase_connection.get_devices()
+                        
+                        if devices_data:
+                            for device in devices_data:
+                                if device['device_name'] == device_name_str:
+                                    device_db_attributes[device_name_str] = {
+                                        'attribute_value': device['attribute_value'],
+                                        'size_category': device.get('size_category', ''),
+                                        'brand': device.get('brand', '')
+                                    }
+                                    print(f"[DB] Found attributes for {device_name_str}: {device['attribute_value']}")
+                                    break
+                else:
+                    # SQLite fallback
+                    db_path = '/app/product_attributes_new.db'
+                    
+                    if os.path.exists(db_path):
+                        conn = sqlite3.connect(db_path)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.cursor()
                     
                     # すべてのデバイスの属性値を取得（新規追加＋既存）
                     for device_name in all_devices_to_check:
@@ -305,10 +335,81 @@ async def process_csv(request: ProcessRequest):
         
         print(f"[DEBUG] Final device attributes: {final_device_attributes}")
         
-        # ブランドに基づいて属性値を取得（旧処理、互換性のため残す）
+        # ブランドに基づいて属性値を取得
         brand_attributes = []
+        print(f"[DEBUG] Checking brand attributes fetch conditions:")
+        print(f"[DEBUG]   request.device_brand: '{request.device_brand}' (type: {type(request.device_brand)})")
+        print(f"[DEBUG]   request.devices_to_add: {request.devices_to_add} (type: {type(request.devices_to_add)})")
+        print(f"[DEBUG]   bool(request.device_brand): {bool(request.device_brand)}")
+        print(f"[DEBUG]   bool(request.devices_to_add): {bool(request.devices_to_add)}")
+        print(f"[DEBUG]   condition result: {bool(request.device_brand and request.devices_to_add)}")
+        
         if request.device_brand and request.devices_to_add:
             try:
+                # ブランド属性を取得（Supabase優先、SQLiteフォールバック）
+                if supabase_connection.is_enabled():
+                    # Supabase mode
+                    brand_names_to_try = [
+                        request.device_brand,
+                        request.device_brand.lower(),
+                        request.device_brand.upper(),
+                        request.device_brand.capitalize()
+                    ]
+                    
+                    if 'huawei' in request.device_brand.lower():
+                        brand_names_to_try.extend(['huawei', 'HUAWEI', 'Huawei'])
+                    
+                    for brand_name in brand_names_to_try:
+                        values = supabase_connection.get_brand_values(brand_name)
+                        if values:
+                            brand_attributes = [v['attribute_value'] for v in values if v.get('row_index', 0) > 0]
+                            if brand_attributes:
+                                print(f"[DEBUG] Found brand attributes from Supabase for '{brand_name}': {len(brand_attributes)} attributes")
+                                break
+                else:
+                    # SQLite fallback
+                    brand_db_path = '/app/brand_attributes.db'
+                    if os.path.exists(brand_db_path):
+                        import sqlite3
+                        conn_brand = sqlite3.connect(brand_db_path)
+                        cursor_brand = conn_brand.cursor()
+                    
+                    # ブランド名を正規化（大文字小文字の違いを吸収）
+                    brand_names_to_try = [
+                        request.device_brand,
+                        request.device_brand.lower(),
+                        request.device_brand.upper(),
+                        request.device_brand.capitalize()
+                    ]
+                    
+                    # HUAWEIの特別処理
+                    if 'huawei' in request.device_brand.lower():
+                        brand_names_to_try.extend(['huawei', 'HUAWEI', 'Huawei'])
+                    
+                    print(f"[DEBUG] Searching brand_attributes.db for brand: {request.device_brand}")
+                    print(f"[DEBUG] Will try these brand names: {brand_names_to_try}")
+                    
+                    for brand_name in brand_names_to_try:
+                        print(f"[DEBUG] Trying brand name: '{brand_name}'")
+                        cursor_brand.execute('''
+                            SELECT attribute_value 
+                            FROM brand_values 
+                            WHERE brand_name = ? AND row_index > 0
+                            ORDER BY row_index
+                        ''', (brand_name,))
+                        
+                        results = cursor_brand.fetchall()
+                        print(f"[DEBUG] Query result for '{brand_name}': {len(results)} rows found")
+                        if results:
+                            brand_attributes = [row[0] for row in results]
+                            print(f"[DEBUG] SUCCESS! Found brand attributes from DB for '{brand_name}': {len(brand_attributes)} attributes")
+                            print(f"[DEBUG] First 3 attributes: {brand_attributes[:3]}")
+                            break
+                        else:
+                            print(f"[DEBUG] No results for brand name: '{brand_name}'")
+                    
+                    conn_brand.close()
+                
                 # データベースから取得できなかった場合は、ハードコーディングされた属性値を使用（フォールバック）
                 if not brand_attributes:
                     # ブランドごとに適切な属性値を設定
@@ -414,12 +515,18 @@ async def process_csv(request: ProcessRequest):
                             'amicoco|その他|デバイス'
                         ]
                     
-                    print(f"Using fallback attributes for brand {request.device_brand}: {len(brand_attributes)} attributes")
+                    print(f"[DEBUG] Using fallback attributes for brand {request.device_brand}: {len(brand_attributes)} attributes")
+                    print(f"[DEBUG] First 3 fallback attributes: {brand_attributes[:3]}")
                     
             except Exception as e:
-                print(f"Error fetching brand attributes: {e}")
+                print(f"[ERROR] Error fetching brand attributes: {e}")
                 # エラーの場合はデフォルト属性値を使用
                 brand_attributes = []
+        
+        # 最終的に使用される brand_attributes をログ出力
+        print(f"[DEBUG] Final brand_attributes to be used: {len(brand_attributes)} attributes")
+        if brand_attributes:
+            print(f"[DEBUG] Final brand_attributes first 3: {brand_attributes[:3]}")
         
         # Read CSV
         df = csv_processor.read_csv(file_path)
@@ -434,7 +541,8 @@ async def process_csv(request: ProcessRequest):
             custom_device_order=request.custom_device_order,
             insert_index=request.insert_index,
             brand_attributes=brand_attributes,
-            device_attributes=final_device_attributes
+            device_attributes=final_device_attributes,
+            reset_all_devices=request.reset_all_devices
         )
         
         # Validate constraints
@@ -495,9 +603,33 @@ async def process_csv(request: ProcessRequest):
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
     """Download processed CSV file"""
+    # まず通常の出力ディレクトリを確認
     file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+    if file_path.exists():
+        return FileResponse(
+            path=file_path,
+            media_type='text/csv',
+            filename=filename,
+            headers={
+                "Content-Type": "text/csv; charset=shift_jis"
+            }
+        )
+    
+    # バッチディレクトリも確認（バッチ処理されたファイル用）
+    # ファイル名にバッチIDが含まれている場合、該当するバッチディレクトリを検索
+    for batch_dir in UPLOAD_DIR.glob("*_batch"):
+        batch_file_path = batch_dir / filename
+        if batch_file_path.exists():
+            return FileResponse(
+                path=batch_file_path,
+                media_type='text/csv',
+                filename=filename,
+                headers={
+                    "Content-Type": "text/csv; charset=shift_jis"
+                }
+            )
+    
+    raise HTTPException(status_code=404, detail="File not found")
     
     return FileResponse(
         path=file_path,
@@ -734,7 +866,10 @@ async def batch_process_csv(
     devices_to_add: Optional[str] = Form(None),
     devices_to_remove: Optional[str] = Form(None),
     output_format: str = Form('single'),
-    apply_to_all: bool = Form(True)
+    apply_to_all: bool = Form(True),
+    add_position: Optional[str] = Form(None),
+    after_device: Optional[str] = Form(None),
+    custom_device_order: Optional[str] = Form(None)
 ):
     """Process multiple CSV files in batch"""
     logger.info(f"Batch processing: {batch_id}")
@@ -744,6 +879,7 @@ async def batch_process_csv(
     # Parse device lists
     devices_add = json.loads(devices_to_add) if devices_to_add else None
     devices_remove = json.loads(devices_to_remove) if devices_to_remove else None
+    custom_order = json.loads(custom_device_order) if custom_device_order else None
     
     # Find batch files
     batch_dir = UPLOAD_DIR / batch_id
@@ -778,13 +914,53 @@ async def batch_process_csv(
             'results': []
         }
     
+    # Get device attributes from database if devices are being added
+    device_attributes = None
+    if devices_add:
+        try:
+            # Get attributes from database for each device
+            device_attributes = []
+            import httpx
+            async with httpx.AsyncClient() as client:
+                for device in devices_add:
+                    # Query the product attributes database using the existing API endpoint
+                    try:
+                        resp = await client.get(f"http://localhost:8000/api/product-attributes/device/{device}")
+                        if resp.status_code == 200:
+                            data = resp.json()
+                        else:
+                            data = None
+                    except:
+                        data = None
+                    
+                    if data and 'attribute_value' in data:
+                        device_attributes.append({
+                            'device': device,
+                            'attribute_value': data['attribute_value'],
+                            'size_category': data.get('size_category')
+                        })
+                    else:
+                        # Fallback: use device name as attribute_value
+                        device_attributes.append({
+                            'device': device,
+                            'attribute_value': device,
+                            'size_category': None
+                        })
+        except Exception as e:
+            logger.warning(f"Could not fetch device attributes: {e}")
+            device_attributes = None
+    
     # Process batch
     result = await batch_processor.process_batch_files(
         file_paths=csv_files,
         devices_to_add=devices_add,
         devices_to_remove=devices_remove,
         output_format=output_format,
-        apply_to_all=apply_to_all
+        apply_to_all=apply_to_all,
+        device_attributes=device_attributes,
+        add_position=add_position,
+        after_device=after_device,
+        custom_device_order=custom_order
     )
     
     return result
@@ -810,20 +986,21 @@ async def download_batch_results(batch_id: str):
             processed_files = list(batch_dir.glob("*_processed_*.csv"))
             if processed_files:
                 logger.info(f"Found {len(processed_files)} processed files")
-                # Create zip file
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                
+                # ZIPファイルをバッチディレクトリ内に作成
+                zip_file_path = batch_dir / f"batch_{batch_id}_results.zip"
+                
+                with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                     for file_path in processed_files:
                         zip_file.write(file_path, file_path.name)
                 
-                zip_buffer.seek(0)
+                logger.info(f"Created ZIP file: {zip_file_path}")
                 
-                return StreamingResponse(
-                    zip_buffer,
+                # ZIPファイルを返す
+                return FileResponse(
+                    path=zip_file_path,
                     media_type='application/zip',
-                    headers={
-                        "Content-Disposition": f"attachment; filename=batch_{batch_id}_results.zip"
-                    }
+                    filename=f"batch_{batch_id}_results.zip"
                 )
         
         raise HTTPException(status_code=404, detail="Batch ID not found")
@@ -845,20 +1022,23 @@ async def download_batch_results(batch_id: str):
     if not output_files:
         raise HTTPException(status_code=404, detail="No output files found")
     
-    # Create zip file in memory
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+    # ZIPファイルをバッチディレクトリに作成
+    batch_dir = UPLOAD_DIR / batch_id
+    if not batch_dir.exists():
+        batch_dir.mkdir(parents=True, exist_ok=True)
+    
+    zip_file_path = batch_dir / f"batch_{batch_id}_results.zip"
+    
+    with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for file_path in output_files:
             zip_file.write(file_path, file_path.name)
     
-    zip_buffer.seek(0)
+    logger.info(f"Created ZIP file: {zip_file_path}")
     
-    return StreamingResponse(
-        zip_buffer,
+    return FileResponse(
+        path=zip_file_path,
         media_type='application/zip',
-        headers={
-            "Content-Disposition": f"attachment; filename=batch_{batch_id}_results.zip"
-        }
+        filename=f"batch_{batch_id}_results.zip"
     )
 
 @app.get("/api/batch-status/{batch_id}")
@@ -881,12 +1061,241 @@ async def get_status():
         with open(state_file, 'r', encoding='utf-8') as f:
             sku_state = json.load(f)
     
+    # Calculate total SKUs - handle both old format (int) and new format (list)
+    total_skus = 0
+    for value in sku_state.values():
+        if isinstance(value, int):
+            total_skus += value
+        elif isinstance(value, list):
+            total_skus += len(value)
+    
     return {
         "uploads": upload_count,
         "outputs": output_count,
         "products_tracked": len(sku_state),
-        "total_skus_generated": sum(sku_state.values())
+        "total_skus_generated": total_skus
     }
+
+# =====================================
+# データベース統合管理API
+# =====================================
+
+@app.post("/api/database/brand-values")
+async def add_brand_value(request: dict):
+    """ブランド属性値を追加"""
+    try:
+        conn = sqlite3.connect('/app/brand_attributes.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO brand_values (brand_name, row_index, attribute_value)
+            VALUES (?, ?, ?)
+        ''', (request['brand_name'], request['row_index'], request['attribute_value']))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "Brand value added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/database/brand-values/{id}")
+async def update_brand_value(id: int, request: dict):
+    """ブランド属性値を更新"""
+    try:
+        conn = sqlite3.connect('/app/brand_attributes.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE brand_values 
+            SET attribute_value = ?
+            WHERE id = ?
+        ''', (request['attribute_value'], id))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "Brand value updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/database/brand-values/{id}")
+async def delete_brand_value(id: int):
+    """ブランド属性値を削除"""
+    try:
+        conn = sqlite3.connect('/app/brand_attributes.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM brand_values WHERE id = ?', (id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "Brand value deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/database/export")
+async def export_brand_database():
+    """ブランドデータベースをExcelファイルとしてエクスポート"""
+    try:
+        import pandas as pd
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        conn = sqlite3.connect('/app/brand_attributes.db')
+        
+        # すべてのブランドデータを取得
+        query = '''
+            SELECT brand_name, row_index, attribute_value 
+            FROM brand_values 
+            ORDER BY brand_name, row_index
+        '''
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        
+        # Excelファイルとして出力
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Brand Attributes', index=False)
+        
+        output.seek(0)
+        
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={
+                'Content-Disposition': f'attachment; filename=brand_attributes_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/database/import")
+async def import_brand_database(file: UploadFile):
+    """Excelファイルからブランドデータベースをインポート"""
+    try:
+        import pandas as pd
+        
+        # ファイルを読み込み
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        # 必要なカラムが存在するか確認
+        required_columns = ['brand_name', 'row_index', 'attribute_value']
+        if not all(col in df.columns for col in required_columns):
+            raise HTTPException(status_code=400, detail=f"Required columns: {required_columns}")
+        
+        conn = sqlite3.connect('/app/brand_attributes.db')
+        cursor = conn.cursor()
+        
+        # 既存データをクリア（オプション）
+        # cursor.execute('DELETE FROM brand_values')
+        
+        # データを挿入
+        for _, row in df.iterrows():
+            cursor.execute('''
+                INSERT OR REPLACE INTO brand_values (brand_name, row_index, attribute_value)
+                VALUES (?, ?, ?)
+            ''', (row['brand_name'], row['row_index'], row['attribute_value']))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": f"Successfully imported {len(df)} records"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/product-attributes/export")
+async def export_device_attributes():
+    """デバイス属性データベースをExcelファイルとしてエクスポート"""
+    try:
+        import pandas as pd
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        conn = sqlite3.connect('/app/product_attributes_new.db')
+        
+        # すべてのデバイスデータを取得
+        query = '''
+            SELECT brand, device_name, attribute_value, size_category, usage_count 
+            FROM device_attributes 
+            ORDER BY brand, device_name
+        '''
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        
+        # Excelファイルとして出力
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Device Attributes', index=False)
+        
+        output.seek(0)
+        
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={
+                'Content-Disposition': f'attachment; filename=device_attributes_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/product-attributes/import")
+async def import_device_attributes(file: UploadFile):
+    """Excelファイルからデバイス属性データベースをインポート"""
+    try:
+        import pandas as pd
+        
+        # ファイルを読み込み
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        # 必要なカラムが存在するか確認
+        required_columns = ['brand', 'device_name', 'attribute_value']
+        if not all(col in df.columns for col in required_columns):
+            raise HTTPException(status_code=400, detail=f"Required columns: {required_columns}")
+        
+        conn = sqlite3.connect('/app/product_attributes_new.db')
+        cursor = conn.cursor()
+        
+        # データを挿入または更新
+        for _, row in df.iterrows():
+            size_category = row.get('size_category', '')
+            usage_count = row.get('usage_count', 0)
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO device_attributes 
+                (brand, device_name, attribute_value, size_category, usage_count)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (row['brand'], row['device_name'], row['attribute_value'], size_category, usage_count))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": f"Successfully imported {len(df)} records"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/product-attributes/devices")
+async def add_device(request: dict):
+    """デバイスを追加"""
+    try:
+        conn = sqlite3.connect('/app/product_attributes_new.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO device_attributes (brand, device_name, attribute_value, size_category, usage_count)
+            VALUES (?, ?, ?, ?, 0)
+        ''', (request['brand'], request['device_name'], request['attribute_value'], request.get('size_category', '')))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "Device added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>HUAWEI Search Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #dc3545;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            width: 300px;
+        }
+        .device-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .device-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .highlight {
+            background: #fff3cd;
+            font-weight: bold;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 HUAWEI デバイス検索テスト</h1>
+        
+        <div class="stats" id="stats">
+            <div class="stat-box">
+                <div class="stat-number" id="totalDevices">-</div>
+                <div>総デバイス数</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="huaweiCount">-</div>
+                <div>HUAWEIデバイス数</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="filteredCount">-</div>
+                <div>フィルター結果</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>1. API レスポンステスト</h2>
+            <button onclick="testDirectAPI()">直接API呼び出し</button>
+            <button onclick="testProxyAPI()">プロキシ経由API</button>
+            <button onclick="testSearchAPI()">検索API (huawei)</button>
+            <div id="apiTestResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. クライアント側フィルタリングテスト</h2>
+            <input type="text" id="searchInput" placeholder="検索語を入力 (例: huawei)" value="huawei">
+            <button onclick="testClientFilter()">フィルタリングテスト</button>
+            <div id="filterTestResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>3. 大文字小文字テスト</h2>
+            <button onclick="testCaseSensitivity()">大文字小文字の比較テスト</button>
+            <div id="caseTestResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. デバイスリスト表示</h2>
+            <button onclick="loadAndDisplayDevices()">全デバイス表示</button>
+            <button onclick="filterHuaweiDevices()">HUAWEIのみ表示</button>
+            <div id="deviceListContainer"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>5. デバッグログ</h2>
+            <button onclick="clearLogs()">ログクリア</button>
+            <pre id="debugLog"></pre>
+        </div>
+    </div>
+
+    <script>
+        let allDevices = [];
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const typeIcon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logDiv.innerHTML += `${timestamp} ${typeIcon} ${message}\n`;
+            console.log(message);
+        }
+
+        function clearLogs() {
+            document.getElementById('debugLog').innerHTML = '';
+        }
+
+        async function testDirectAPI() {
+            const resultDiv = document.getElementById('apiTestResult');
+            resultDiv.innerHTML = '<div class="info">Testing direct API...</div>';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/product-attributes/devices');
+                const data = await response.json();
+                
+                log(`Direct API returned ${data.length} devices`, 'success');
+                
+                const huaweiDevices = data.filter(d => 
+                    d.brand && d.brand.toUpperCase().includes('HUAWEI')
+                );
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Direct API Success<br>
+                        Total: ${data.length} devices<br>
+                        HUAWEI: ${huaweiDevices.length} devices<br>
+                        Brands found: ${[...new Set(data.map(d => d.brand))].join(', ')}
+                    </div>
+                `;
+                
+                if (huaweiDevices.length > 0) {
+                    resultDiv.innerHTML += `
+                        <div class="info">
+                            Sample HUAWEI devices:<br>
+                            ${huaweiDevices.slice(0, 3).map(d => 
+                                `- ${d.device_name} (${d.brand})`
+                            ).join('<br>')}
+                        </div>
+                    `;
+                }
+                
+                allDevices = data;
+                document.getElementById('totalDevices').textContent = data.length;
+                document.getElementById('huaweiCount').textContent = huaweiDevices.length;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+                log(`Direct API error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testProxyAPI() {
+            const resultDiv = document.getElementById('apiTestResult');
+            resultDiv.innerHTML = '<div class="info">Testing proxy API...</div>';
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/product-attributes/devices');
+                const data = await response.json();
+                
+                log(`Proxy API returned ${data.length} devices`, 'success');
+                
+                const huaweiDevices = data.filter(d => 
+                    d.brand && d.brand.toUpperCase().includes('HUAWEI')
+                );
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Proxy API Success<br>
+                        Total: ${data.length} devices<br>
+                        HUAWEI: ${huaweiDevices.length} devices
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+                log(`Proxy API error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSearchAPI() {
+            const resultDiv = document.getElementById('apiTestResult');
+            resultDiv.innerHTML = '<div class="info">Testing search API...</div>';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/product-attributes/devices?search=huawei');
+                const data = await response.json();
+                
+                log(`Search API returned ${data.length} devices for "huawei"`, 'success');
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Search API Success<br>
+                        Found: ${data.length} devices matching "huawei"
+                    </div>
+                `;
+                
+                if (data.length > 0) {
+                    resultDiv.innerHTML += `
+                        <div class="info">
+                            Results:<br>
+                            ${data.slice(0, 5).map(d => 
+                                `- ${d.device_name} (${d.brand})`
+                            ).join('<br>')}
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+                log(`Search API error: ${error.message}`, 'error');
+            }
+        }
+
+        function testClientFilter() {
+            const searchTerm = document.getElementById('searchInput').value;
+            const resultDiv = document.getElementById('filterTestResult');
+            
+            if (allDevices.length === 0) {
+                resultDiv.innerHTML = '<div class="error">先にAPIテストを実行してデータを取得してください</div>';
+                return;
+            }
+            
+            const search = searchTerm.toLowerCase();
+            log(`Client filtering for: "${searchTerm}" (lowercase: "${search}")`);
+            
+            const filtered = allDevices.filter(d => {
+                const deviceNameMatch = d.device_name && d.device_name.toLowerCase().includes(search);
+                const brandMatch = d.brand && d.brand.toLowerCase().includes(search);
+                const attrMatch = d.attribute_value && d.attribute_value.toLowerCase().includes(search);
+                
+                if (search.includes('huawei') && d.brand && d.brand.toUpperCase() === 'HUAWEI') {
+                    log(`Checking HUAWEI device: ${d.device_name}, brand="${d.brand}", brandLower="${d.brand.toLowerCase()}", matches=${brandMatch}`);
+                }
+                
+                return deviceNameMatch || brandMatch || attrMatch;
+            });
+            
+            document.getElementById('filteredCount').textContent = filtered.length;
+            
+            resultDiv.innerHTML = `
+                <div class="${filtered.length > 0 ? 'success' : 'error'}">
+                    検索語: "${searchTerm}"<br>
+                    結果: ${filtered.length} devices found<br>
+                    ${filtered.length > 0 ? 'サンプル:<br>' + filtered.slice(0, 3).map(d => 
+                        `- ${d.device_name} (${d.brand})`
+                    ).join('<br>') : '❌ 結果なし'}
+                </div>
+            `;
+            
+            log(`Filter result: ${filtered.length} devices`, filtered.length > 0 ? 'success' : 'error');
+        }
+
+        function testCaseSensitivity() {
+            const resultDiv = document.getElementById('caseTestResult');
+            
+            const testCases = [
+                { search: 'huawei', brand: 'HUAWEI' },
+                { search: 'HUAWEI', brand: 'HUAWEI' },
+                { search: 'Huawei', brand: 'HUAWEI' },
+                { search: 'huawei', brand: 'Huawei' },
+                { search: 'huawei', brand: 'huawei' }
+            ];
+            
+            let html = '<div class="info">大文字小文字の比較テスト結果:</div>';
+            
+            testCases.forEach(test => {
+                const searchLower = test.search.toLowerCase();
+                const brandLower = test.brand.toLowerCase();
+                const matches = brandLower.includes(searchLower);
+                
+                html += `<div class="${matches ? 'success' : 'error'}">
+                    Search: "${test.search}" vs Brand: "${test.brand}"<br>
+                    Lower: "${searchLower}" vs "${brandLower}"<br>
+                    Result: ${matches ? '✅ MATCH' : '❌ NO MATCH'}
+                </div>`;
+                
+                log(`Case test: "${test.search}" vs "${test.brand}" = ${matches}`, matches ? 'success' : 'error');
+            });
+            
+            resultDiv.innerHTML = html;
+        }
+
+        async function loadAndDisplayDevices() {
+            await testDirectAPI();
+            const container = document.getElementById('deviceListContainer');
+            
+            if (allDevices.length === 0) {
+                container.innerHTML = '<div class="error">No devices loaded</div>';
+                return;
+            }
+            
+            const devicesByBrand = {};
+            allDevices.forEach(d => {
+                if (!devicesByBrand[d.brand]) devicesByBrand[d.brand] = [];
+                devicesByBrand[d.brand].push(d);
+            });
+            
+            let html = '<div class="device-list">';
+            for (const [brand, devices] of Object.entries(devicesByBrand)) {
+                const isHuawei = brand.toUpperCase() === 'HUAWEI';
+                html += `<div class="${isHuawei ? 'highlight' : ''}">
+                    <strong>${brand}</strong> (${devices.length} devices)
+                    ${isHuawei ? ' ⭐ HUAWEI FOUND!' : ''}
+                </div>`;
+                devices.slice(0, 3).forEach(d => {
+                    html += `<div class="device-item">
+                        <span>${d.device_name}</span>
+                        <span>${d.attribute_value}</span>
+                    </div>`;
+                });
+                if (devices.length > 3) {
+                    html += `<div style="text-align: center; color: #6c757d;">... +${devices.length - 3} more</div>`;
+                }
+            }
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+
+        function filterHuaweiDevices() {
+            const container = document.getElementById('deviceListContainer');
+            
+            const huaweiDevices = allDevices.filter(d => 
+                d.brand && d.brand.toUpperCase() === 'HUAWEI'
+            );
+            
+            if (huaweiDevices.length === 0) {
+                container.innerHTML = '<div class="error">No HUAWEI devices found!</div>';
+                return;
+            }
+            
+            let html = `<div class="success">Found ${huaweiDevices.length} HUAWEI devices:</div>`;
+            html += '<div class="device-list">';
+            huaweiDevices.forEach(d => {
+                html += `<div class="device-item highlight">
+                    <span>${d.device_name}</span>
+                    <span>${d.brand}</span>
+                    <span>${d.attribute_value}</span>
+                </div>`;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+
+        // Auto-load on start
+        window.addEventListener('load', () => {
+            testDirectAPI();
+        });
+    </script>
+</body>
+</html>

@@ -6,6 +6,10 @@ import json
 import logging
 import random
 import re
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from brand_mapping import normalize_brand_name, get_brand_db_name
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +51,18 @@ class RakutenCSVProcessor:
                    devices_to_remove: List[str] = None, add_position: str = 'start',
                    after_device: str = None, custom_device_order: List[str] = None,
                    insert_index: int = None, brand_attributes: List[str] = None,
-                   device_attributes: List[Dict] = None, apply_db_attributes_to_existing: bool = True) -> pd.DataFrame:
-        """CSVを処理して機種を追加/削除（複数商品対応）"""
+                   device_attributes: List[Dict] = None, apply_db_attributes_to_existing: bool = True,
+                   reset_all_devices: bool = False) -> pd.DataFrame:
+        """CSVを処理して機種を追加/削除（複数商品対応）
         
-        # デバッグログ
-        print(f"[DEBUG] process_csv called with:")
-        print(f"  devices_to_add: {devices_to_add}")
-        print(f"  devices_to_remove: {devices_to_remove}")
-        print(f"  add_position: {add_position}")
-        print(f"  custom_device_order: {custom_device_order}")
+        Args:
+            reset_all_devices: 全機種を削除して新しい機種リストで再定義
+            custom_device_order: 機種の完全な順序指定（並び替え機能）
+        """
+        
+        # デバッグログを簡略化（処理速度改善）
+        if devices_to_add or devices_to_remove or custom_device_order or reset_all_devices:
+            print(f"[DEBUG] Processing with: add={devices_to_add}, remove={devices_to_remove}, reset={reset_all_devices}")
         
         # 商品管理番号の列を特定
         product_col = '商品管理番号（商品URL）'
@@ -75,60 +82,103 @@ class RakutenCSVProcessor:
             
             if not parent_rows.empty:
                 product_id = parent_rows.iloc[0][product_col]
-                print(f"[DEBUG] Processing product: {product_id}")
                 
-                # 機種削除
-                if devices_to_remove:
-                    print(f"[DEBUG] Removing devices: {devices_to_remove}")
-                    sku_rows = self._remove_devices(sku_rows, devices_to_remove, device_col)
-                
-                # 既存のSKU行にデータベースの属性値を適用
-                if apply_db_attributes_to_existing and device_attributes:
-                    sku_rows = self._apply_db_attributes_to_existing(sku_rows, device_col, device_attributes)
-                
-                # 機種追加（実際に新規の機種のみ）
-                really_new_devices = []  # 追加前に初期化
-                if devices_to_add:
-                    # 既存のSKU行にある機種を除外（追加前の状態で判定）
-                    existing_devices_before_add = set(sku_rows[device_col].dropna().unique()) if device_col in sku_rows.columns else set()
-                    really_new_devices = [d for d in devices_to_add if d not in existing_devices_before_add]
+                # 全機種削除して再定義（reset_all_devices=True）
+                if reset_all_devices:
+                    # 既存のSKU行を全て削除
+                    sku_rows = pd.DataFrame()
                     
-                    if really_new_devices:
-                        print(f"[DEBUG] Adding NEW devices: {really_new_devices}")
-                        new_sku_rows = self._add_devices(
-                            parent_rows, sku_rows, really_new_devices, 
-                            product_id, product_col, device_col, color_col, sku_col,
-                            brand_attributes, device_attributes
-                        )
-                        print(f"[DEBUG] Created {len(new_sku_rows)} new SKU rows")
-                        sku_rows = pd.concat([new_sku_rows, sku_rows], ignore_index=True)
+                    # custom_device_orderまたはdevices_to_addから新しい機種リストを作成
+                    if custom_device_order:
+                        new_devices = custom_device_order
+                    elif devices_to_add:
+                        new_devices = devices_to_add
                     else:
-                        print(f"[DEBUG] No really new devices to add (all already exist)")
+                        new_devices = []
+                    
+                    if new_devices:
+                        # 新しい機種でSKU行を作成（カラーバリエーションを考慮）
+                        # 元のSKU行からカラー情報を取得
+                        original_sku_rows = product_data['sku_rows']
+                        if not original_sku_rows.empty and color_col in original_sku_rows.columns:
+                            colors = original_sku_rows[color_col].dropna().unique()
+                        else:
+                            colors = [None]  # カラーバリエーションなし
+                        
+                        # 各機種・カラーの組み合わせでSKU行を作成
+                        new_sku_rows = []
+                        for device in new_devices:
+                            for color in colors:
+                                new_row = parent_rows.iloc[0].copy()
+                                new_row[device_col] = device
+                                if color is not None:
+                                    new_row[color_col] = color
+                                new_row[sku_col] = ''  # 後で採番される
+                                new_sku_rows.append(new_row)
+                        
+                        if new_sku_rows:
+                            sku_rows = pd.DataFrame(new_sku_rows)
+                
+                # 通常の処理（reset_all_devices=False）
+                else:
+                    # 機種削除
+                    if devices_to_remove:
+                        sku_rows = self._remove_devices(sku_rows, devices_to_remove, device_col)
+                    
+                    # 既存のSKU行にデータベースの属性値を適用
+                    if apply_db_attributes_to_existing and device_attributes:
+                        sku_rows = self._apply_db_attributes_to_existing(sku_rows, device_col, device_attributes)
+                
+                    # 機種追加（この製品に存在しない機種を追加）- reset_all_devicesでない場合のみ
+                    devices_to_add_for_product = []  
+                    if devices_to_add:
+                        # この製品の既存のSKU行にある機種を取得
+                        existing_devices_in_product = set(sku_rows[device_col].dropna().unique()) if device_col in sku_rows.columns and not sku_rows.empty else set()
+                        
+                        # devices_to_addの中で、この製品にまだ存在しない機種を特定
+                        devices_to_add_for_product = [d for d in devices_to_add if d not in existing_devices_in_product]
+                        
+                        if devices_to_add_for_product:
+                            new_sku_rows = self._add_devices(
+                                parent_rows, sku_rows, devices_to_add_for_product, 
+                                product_id, product_col, device_col, color_col, sku_col,
+                                brand_attributes, device_attributes
+                            )
+                            sku_rows = pd.concat([new_sku_rows, sku_rows], ignore_index=True)
                 
                 # バリエーション2選択肢定義を更新（親行）- 位置指定に対応
                 if device_def_col in parent_rows.columns and not sku_rows.empty:
-                    # devices_to_addではなくcustom_device_orderを優先的に使用
-                    # custom_device_orderは完全な機種リスト（正しい順序）
-                    if custom_device_order:
-                        print(f"[DEBUG] Using custom_device_order for definition update")
-                        parent_rows = self._update_device_definition(
-                            parent_rows, sku_rows, device_col, device_def_col, 
-                            devices_to_add,  # 元のリストを渡す（フィルタリングしない）
-                            add_position, after_device, custom_device_order, insert_index
-                        )
-                    elif devices_to_add:
-                        # custom_device_orderがない場合は、本当に新しい機種のみを渡す
-                        print(f"[DEBUG] Using really_new_devices for definition update: {really_new_devices}")
-                        parent_rows = self._update_device_definition(
-                            parent_rows, sku_rows, device_col, device_def_col, 
-                            really_new_devices,  # 事前に計算した本当に新しい機種
-                            add_position, after_device, custom_device_order, insert_index
-                        )
-                    else:
-                        # devices_to_addがない場合（既存の機種のみの更新）
+                    # reset_all_devicesの場合、新しい機種リストがそのまま定義になる
+                    if reset_all_devices:
+                        if custom_device_order:
+                            parent_rows = self._update_device_definition(
+                                parent_rows, sku_rows, device_col, device_def_col, 
+                                [], add_position, after_device, custom_device_order, insert_index
+                            )
+                        elif devices_to_add:
+                            # devices_to_addをそのまま定義として使用
+                            parent_rows = self._update_device_definition(
+                                parent_rows, sku_rows, device_col, device_def_col, 
+                                [], add_position, after_device, devices_to_add, insert_index
+                            )
+                    # custom_device_orderが最優先（完全な順序付きリスト、並び替え機能）
+                    elif custom_device_order:
                         parent_rows = self._update_device_definition(
                             parent_rows, sku_rows, device_col, device_def_col, 
                             [], add_position, after_device, custom_device_order, insert_index
+                        )
+                    elif not reset_all_devices and devices_to_add_for_product:
+                        # この製品に追加された機種を位置指定で追加
+                        parent_rows = self._update_device_definition(
+                            parent_rows, sku_rows, device_col, device_def_col, 
+                            devices_to_add_for_product,
+                            add_position, after_device, None, insert_index
+                        )
+                    else:
+                        # 機種の追加がない場合でも定義を更新（順序の整合性を保つため）
+                        parent_rows = self._update_device_definition(
+                            parent_rows, sku_rows, device_col, device_def_col, 
+                            [], add_position, after_device, None, insert_index
                         )
                 
                 # 全てのSKU番号を新規採番（sku_aプレフィックス）
@@ -360,8 +410,10 @@ class RakutenCSVProcessor:
                     if product_attr1_col in new_row.index and brand_attributes:
                         # brand_attributesからランダムに1つ選択
                         random_attribute = random.choice(brand_attributes)
-                        new_row[product_attr1_col] = random_attribute
-                        print(f"[DEBUG] Set product_attr1 for {device}: {random_attribute}")
+                        # ブランド名を正規化（ブランドDBの形式に合わせる）
+                        normalized_brand = get_brand_db_name(random_attribute) if '|' not in random_attribute else random_attribute
+                        new_row[product_attr1_col] = normalized_brand
+                        print(f"[DEBUG] Set product_attr1 for {device}: {normalized_brand} (original: {random_attribute})")
                     
                     # 商品属性（値）8にattribute_valueを設定（device_attributesから取得）
                     if product_attr8_col in new_row.index:
@@ -440,11 +492,15 @@ class RakutenCSVProcessor:
                 clean_color = re.sub(r'^[A-Z]\.\s*', '', str(color))
                 
                 # システム連携用SKU番号を構築
-                # 形式: kaiser_huawei_色_LL（固定）
-                system_sku = f"{product_id}_{clean_color}_LL"
+                # 形式: kaiser_huawei_色_{size_category}（DBから取得したサイズカテゴリを使用）
+                # size_categoryがない場合のフォールバック値
+                fallback_size = "LL"
+                final_size = size_category if size_category else fallback_size
+                
+                system_sku = f"{product_id}_{clean_color}_{final_size}"
+                print(f"[SYSTEM_SKU] Device: {device}, Size: {final_size} (from DB: {size_category}), SKU: {system_sku}")
                 
                 sku_rows.at[idx, system_sku_col] = system_sku
-                print(f"[DEBUG] Generated system SKU: {system_sku}")
         
         return sku_rows
     
@@ -453,12 +509,13 @@ class RakutenCSVProcessor:
                                  devices_to_add: List[str] = None, add_position: str = 'start',
                                  after_device: str = None, custom_device_order: List[str] = None,
                                  insert_index: int = None) -> pd.DataFrame:
-        """バリエーション2選択肢定義を更新（全機種リスト）"""
-        print(f"[DEBUG] _update_device_definition called with:")
-        print(f"  add_position: {add_position}")
-        print(f"  after_device: {after_device}")
-        print(f"  custom_device_order: {custom_device_order}")
-        print(f"  devices_to_add: {devices_to_add}")
+        """バリエーション2選択肢定義を更新（全機種リスト）
+        
+        優先順位：
+        1. custom_device_order: 完全な順序付きリスト（最優先）
+        2. devices_to_add + position: 新機種を指定位置に追加
+        3. デフォルト: 既存の順序を維持
+        """
         
         if device_col not in sku_rows.columns:
             return parent_rows
@@ -472,8 +529,6 @@ class RakutenCSVProcessor:
                 all_sku_devices.append(device_str)
                 seen_devices.add(device_str)
         
-        print(f"[DEBUG] All devices in current SKU rows (order preserved): {all_sku_devices}")
-        
         # 親行から元の機種リストを取得（処理前の状態、順序を保持）
         original_devices_from_parent = []
         if device_def_col in parent_rows.columns:
@@ -483,33 +538,23 @@ class RakutenCSVProcessor:
                     original_devices_from_parent = [d.strip() for d in str(var_def).split('|') if d.strip()]
                     break
         
-        print(f"[DEBUG] Original devices from parent (order preserved): {original_devices_from_parent}")
-        
         # 元の親行定義がある場合はそれを基準とし、ない場合はSKU行の順序を使用
         if original_devices_from_parent:
             base_device_order = original_devices_from_parent
         else:
             base_device_order = all_sku_devices
         
-        # devices_to_addが指定されている場合の処理
-        if devices_to_add:
-            print(f"[DEBUG] devices_to_add: {devices_to_add}")
-            
+        # 新機種の識別（custom_device_orderがない場合のみ）
+        new_devices = []
+        if not custom_device_order and devices_to_add:
             # 新規機種の判定：devices_to_addの中で、基準リストに存在しない機種
             base_device_set = set(base_device_order)
             new_devices = [d for d in devices_to_add if d not in base_device_set]
-            
-        else:
-            new_devices = []
-        
-        print(f"[DEBUG] New devices identified: {new_devices}")
-        print(f"[DEBUG] Base device order: {base_device_order}")
         
         # 位置指定に基づいて機種リストを組み立て
-        # custom_device_orderが存在する場合、それが最終的な機種順序
+        # 優先順位: 1. custom_device_order > 2. position指定 > 3. デフォルト
         if custom_device_order:
             # custom_device_orderは完全な順序付きリスト（新規機種も正しい位置に含まれている）
-            print(f"[DEBUG] Using custom_device_order directly: {custom_device_order}")
             device_list = list(custom_device_order)
         elif not new_devices:
             # 新規機種がない場合は元の順序を維持
@@ -522,8 +567,6 @@ class RakutenCSVProcessor:
             device_list = base_device_order + new_devices
         elif add_position == 'after' and after_device:
             # 特定機種の後に追加
-            print(f"[DEBUG] Looking for after_device: '{after_device}' in base_device_order")
-            print(f"[DEBUG] base_device_order: {base_device_order}")
             print(f"[DEBUG] new_devices to insert: {new_devices}")
             
             device_list = []
@@ -543,8 +586,10 @@ class RakutenCSVProcessor:
                 print(f"[DEBUG] after_device '{after_device}' not found in base_device_order, adding at end")
                 device_list.extend(new_devices)
         else:
-            # デフォルトは元の順序を維持して先頭に新機種を追加
-            device_list = new_devices + base_device_order
+            # デフォルトは元の順序を維持して末尾に新機種を追加（バッチ処理で重要）
+            # 元のCSVの機種順序を壊さないようにする
+            device_list = base_device_order + new_devices
+            print(f"[DEBUG] Default: preserving original order, adding new devices at end")
         
         # パイプ区切りで結合（楽天RMS仕様）
         device_definition = '|'.join(device_list)

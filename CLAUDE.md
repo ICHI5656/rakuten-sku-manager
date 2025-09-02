@@ -1,248 +1,246 @@
-# CLAUDE.md - Rakuten SKU Manager
+# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Rakuten SKU Manager project.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-**rakuten_sku_manager** is a Docker-based web application for processing Rakuten RMS CSV files with device variation management, SKU auto-generation, and CSV output processing.
+**rakuten_sku_manager** is a Docker-based web application for Rakuten RMS CSV processing and product attribute database management. It handles device variation management, SKU auto-numbering, and cross-join expansion for Japanese e-commerce.
 
-- **Location**: `/rakuten_sku_manager`
-- **Stack**: FastAPI (Python) backend + React/TypeScript frontend + Docker
-- **Purpose**: Automated Rakuten marketplace CSV processing with device management and SKU generation
+## Tech Stack
+- **Backend**: FastAPI (Python 3.11), Pandas, SQLite/Supabase
+- **Frontend**: React 18, TypeScript, Material-UI, Vite
+- **Infrastructure**: Docker Compose, Nginx
+- **Database**: Dual-mode - SQLite (local) or Supabase (cloud)
 
-## Quick Start
+## Essential Commands
+
+### Quick Start
+```bash
+# Full rebuild and start (recommended for major changes)
+docker-rebuild.cmd  # Windows
+docker-compose down && docker-compose build --no-cache && docker-compose up -d  # Linux/Mac
+
+# Quick rebuild for minor changes
+simple-rebuild.cmd  # Windows
+docker-compose restart
+
+# Access application
+http://localhost:3000  # Frontend
+http://localhost:8000/docs  # API documentation
+```
 
 ### Development Commands
-
 ```bash
-# Start the application
-docker-compose up -d
+# Backend-only rebuild
+docker-compose build --no-cache backend && docker-compose up -d backend
 
-# Rebuild after code changes (force rebuild)
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-
-# Stop the application
-docker-compose down
+# Frontend-only rebuild
+docker-compose build --no-cache frontend && docker-compose up -d frontend
 
 # View logs
 docker-compose logs -f backend
 docker-compose logs -f frontend
+
+# Execute Python scripts inside container
+docker exec rakuten-sku-backend python /app/script_name.py
+
+# Database access
+docker exec rakuten-sku-backend python -c "import sqlite3; conn = sqlite3.connect('/app/product_attributes_new.db'); cur = conn.cursor(); cur.execute('SELECT COUNT(*) FROM device_attributes'); print(cur.fetchone())"
 ```
 
-### Access Points
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+### Testing & Debugging
+```bash
+# Test CSV processing
+docker cp test.csv rakuten-sku-backend:/app/test.csv
+docker exec rakuten-sku-backend python /app/test_device_position.py
 
-## Architecture
+# Test API endpoints
+curl -X GET http://localhost:8000/api/product-attributes/brands
+curl -X POST http://localhost:8000/api/upload -F "file=@test.csv"
 
-### Backend (FastAPI)
-- **Main App**: `backend/app.py` - FastAPI application with CORS middleware
-- **Core Services**:
-  - `services/rakuten_processor.py` - Main Rakuten CSV processing logic
-  - `services/csv_processor.py` - Generic CSV reading/writing with encoding detection
-  - `services/sku_manager.py` - SKU auto-numbering (sku_a000001 format)
-  - `services/device_manager.py` - Device extraction and management
-  - `services/validator.py` - Data validation and constraint checking
-- **Models**: `models/schemas.py` - Pydantic data models
-- **Port**: 8000
+# Container health check
+docker-compose ps
+docker inspect rakuten-sku-backend --format='{{.State.Health.Status}}'
+```
 
-### Frontend (React + TypeScript)
-- **Framework**: React 18 + TypeScript + Material-UI
-- **Build Tool**: Vite
-- **Main Component**: `src/components/DeviceManager.tsx` - Device management interface
-- **Services**: `src/services/api.ts` - Backend API communication
-- **Types**: `src/types/index.ts` - TypeScript interfaces
-- **Port**: 3000
+## Architecture Overview
 
-### Data Management
-- **Upload Directory**: `data/uploads/` - Temporary CSV files
-- **Output Directory**: `data/outputs/` - Processed CSV files
-- **State Directory**: `data/state/` - SKU counters and persistent state
-- **SKU State File**: `data/state/sku_counters.json` - Product-specific SKU counters
+### Processing Pipeline
+```
+CSV Upload → Encoding Detection → Product Grouping → Device Management → SKU Generation → Database Update → CSV Export
+```
 
-## Key Features
+### Core Processing Flow
 
-### CSV Processing
-- **Input Format**: Rakuten RMS CSV with Shift-JIS encoding
-- **Output Format**: Shift-JIS encoded CSV with CRLF line endings
-- **Encoding Detection**: Automatic detection and conversion between Shift-JIS and UTF-8
-- **Parent-Child Structure**: Handles Rakuten's parent row (商品) and child row (SKU) relationships
+1. **CSV Upload & Validation** (`backend/app.py:upload_csv`)
+   - Auto-detects Shift-JIS encoding
+   - Groups by product management number (商品URL)
+   - Extracts devices from variation2 option definitions
 
-### Device Management
-- **Device Addition**: Support for adding multiple devices (comma-separated input)
-- **Device Removal**: Checkbox-based device removal from existing variations
-- **Device Prioritization**: New devices are placed at the beginning of variation definitions
-- **Product-Specific Devices**: Display different device sets per product in separate modal windows
+2. **Device Management** (`backend/services/rakuten_processor.py:process_csv`)
+   - Identifies truly new devices (not in existing SKU rows)
+   - Position logic application:
+     ```python
+     Priority: custom_device_order > add_position > default_order
+     ```
+   - Maintains device order consistency across products
 
-### SKU Auto-Generation
-- **Format**: `sku_a000001` with auto-incrementing numbers
-- **Scope**: Product-specific counters (each product maintains independent SKU sequence)
-- **Persistence**: SKU counters saved to JSON file for session continuity
-- **Capacity**: Supports large SKU volumes with automatic counter management
+3. **SKU Generation** (`backend/services/sku_manager.py`)
+   - Product-scoped sequential numbering: `sku_a000001`, `sku_b000001`
+   - State persistence: `/app/data/state/sku_counters.json`
+   - Cross-join expansion: colors × devices = total SKUs
 
-### Variation Processing
-- **Column Mapping**:
-  - `商品管理番号（商品URL）` - Product ID
-  - `SKU管理番号` - SKU ID
-  - `バリエーション項目選択肢2` - Device variation field
-  - `バリエーション2選択肢定義` - Device definition field (pipe-separated)
-- **Cross Join**: Automatic generation of all device combinations with existing variations
-- **Parent Row Updates**: Automatic updating of variation definitions in parent rows
+4. **Database Integration** (`backend/product_attributes_api_v2.py`)
+   - SQLite path: `/app/product_attributes_new.db`
+   - Supabase mode: Controlled by `USE_SUPABASE` env variable
+   - Device usage count tracking
+   - Auto brand detection from device names
 
-## API Endpoints
+### Critical Business Rules
 
-| Method | Endpoint | Description | Key Parameters |
-|--------|----------|-------------|----------------|
-| POST | `/api/upload` | Upload CSV file for processing | `file: UploadFile` |
-| POST | `/api/process` | Process CSV with device changes | `ProcessRequest` with `devices_to_add`, `devices_to_remove` |
-| GET | `/api/download/{filename}` | Download processed CSV | `filename: str` |
-| GET | `/api/devices/{file_id}` | Get device list from uploaded CSV | `file_id: str` |
-| GET | `/api/status` | System status and statistics | - |
-| DELETE | `/api/cleanup` | Clean up old files (24h+) | - |
+#### CSV Structure Requirements
+- **Parent row**: Has product management number, no SKU number, contains variation definitions
+- **SKU row**: Has both product management number and SKU number
+- **Encoding**: Shift-JIS for both input and output
 
-## Data Models
+#### Device Positioning Algorithm
+```python
+# backend/services/rakuten_processor.py:_update_device_definition()
+if custom_device_order:  # Complete order list from frontend
+    device_list = custom_device_order
+elif add_position == 'start':
+    device_list = new_devices + existing_devices  
+elif add_position == 'after' and after_device:
+    index = existing_devices.index(after_device) + 1
+    device_list = existing_devices[:index] + new_devices + existing_devices[index:]
+else:
+    device_list = existing_devices + new_devices  # Default: append to end
+```
 
-### ProcessRequest
+#### Rakuten RMS Constraints
+- Max 40 variations per attribute
+- Max 400 SKUs per product
+- Max 100MB file upload
+- Files auto-delete after 24 hours
+
+## Frontend-Backend Contract
+
+### Key API Endpoints
+```typescript
+POST /api/upload
+POST /api/process
+GET /api/product-attributes/devices
+GET /api/database/brands
+POST /api/batch/upload
+GET /api/batch/status/{batch_id}
+```
+
+### Process Request Interface
 ```typescript
 interface ProcessRequest {
   file_id: string;
-  devices_to_add: string[];
-  devices_to_remove: string[];
-  output_format: "single" | "per_product" | "split_60k";
+  devices_to_add: string[];         // All devices (new + existing)
+  custom_device_order?: string[];   // Complete order list
+  add_position?: 'start' | 'end' | 'after' | 'custom';
+  after_device?: string;
+  device_attributes?: Array<{
+    device: string;
+    attribute_value: string;
+    size_category?: string;
+  }>;
 }
 ```
 
-### UploadResponse
-```typescript
-interface UploadResponse {
-  file_id: string;
-  devices: string[];
-  products: ProductInfo[];
-  product_devices?: Record<string, string[]>;  // Key feature for product grouping
-  row_count: number;
-  column_count: number;
-}
-```
+## Database Configuration
 
-## Important Processing Logic
+### Dual-Mode Operation
+- **SQLite Mode**: Default, uses `./backend/product_attributes_new.db`
+- **Supabase Mode**: Enabled via `USE_SUPABASE=true` in `.env.supabase`
 
-### Device Definition Updates (`rakuten_processor.py:_update_device_definition`)
-```python
-# New devices are prioritized at the beginning
-new_devices = []
-existing_devices = []
-devices_to_add_set = set(devices_to_add) if devices_to_add else set()
-
-for device in all_devices:
-    device_str = str(device)
-    if device_str in devices_to_add_set:
-        new_devices.append(device_str)
-    else:
-        existing_devices.append(device_str)
-
-device_list = new_devices + existing_devices
-```
-
-### Product Device Extraction (`app.py`)
-```python
-# Extract product-specific device lists from variation definitions
-if product_col in df.columns and sku_col in df.columns and var_def_col in df.columns:
-    for idx, row in df.iterrows():
-        has_product = pd.notna(row.get(product_col))
-        sku_value = row.get(sku_col)
-        is_sku_empty = pd.isna(sku_value) or sku_value == ''
-        
-        if has_product and is_sku_empty:  # Parent row
-            product_id = row[product_col]
-            var_def_value = row.get(var_def_col, None)
-            if pd.notna(var_def_value) and var_def_value and str(var_def_value).strip():
-                device_list = [d.strip() for d in str(var_def_value).split('|') if d.strip()]
-                if device_list:
-                    product_devices[product_id] = device_list
-```
-
-## Development Workflow
-
-### Making Code Changes
-1. Modify source code in `backend/` or `frontend/`
-2. Rebuild containers: `docker-compose build --no-cache`
-3. Restart services: `docker-compose up -d`
-4. Clear browser cache if frontend changes not appearing
-5. Check logs: `docker-compose logs -f backend` or `docker-compose logs -f frontend`
-
-### Testing
-- **Backend Tests**: No dedicated test framework configured - manual testing via API endpoints
-- **Frontend Tests**: No test scripts configured - manual browser testing
-- **CSV Testing**: Use sample Rakuten RMS CSV files with proper Shift-JIS encoding
-
-### Debugging
-- **API Debugging**: Check `docker-compose logs -f backend` for Python errors
-- **Frontend Debugging**: Browser developer tools + `docker-compose logs -f frontend`
-- **Data Flow**: DeviceManager includes extensive console.log debugging for productDevices flow
-
-## Constraints and Limitations
-
-### Rakuten RMS Constraints
-- **Variation Limit**: Maximum 40 choices per variation attribute
-- **SKU Limit**: Maximum 400 SKUs per product
-- **File Size**: Recommended maximum 100MB
-- **Encoding**: Must be Shift-JIS for Rakuten compatibility
-
-### System Constraints
-- **File Retention**: Automatic cleanup after 24 hours
-- **Memory Usage**: Depends on CSV file size and number of variations
-- **Concurrent Processing**: Single-threaded CSV processing
-
-## File Naming Conventions
-
-### Input Files
-- Pattern: `upload_{timestamp}_{original_filename}`
-- Location: `data/uploads/`
-
-### Output Files
-- **Single File**: `item_{timestamp}.csv`
-- **Per Product**: `item_{timestamp}_{index}.csv`
-- **Split Files**: `item_{timestamp}_{chunk_number}.csv`
-- Location: `data/outputs/`
-
-## Troubleshooting
-
-### Common Issues
-1. **Port Conflicts**: Change ports in `docker-compose.yml` if 3000/8000 are in use
-2. **Character Encoding**: Ensure input CSV files are Shift-JIS encoded
-3. **Frontend Not Updating**: Clear browser cache and rebuild with `--no-cache`
-4. **Device Grouping Not Showing**: Check `productDevices` in browser console and backend logs
-
-### Debug Commands
+### Supabase Setup
 ```bash
-# Check container status
-docker-compose ps
+# Configure environment
+cp .env.supabase .env
+# Edit .env with your Supabase credentials
 
-# View detailed logs
-docker-compose logs --tail=100 backend
-docker-compose logs --tail=100 frontend
+# Run migrations
+docker exec rakuten-sku-backend python /app/migrate_to_supabase.py
 
-# Restart single service
-docker-compose restart backend
-
-# Force complete rebuild
-docker-compose down -v
-docker-compose build --no-cache
-docker-compose up -d
+# Verify connection
+curl http://localhost:8000/  # Should show "database_mode": "Supabase"
 ```
 
-## Important Notes
-- This system handles Japanese text data with proper Shift-JIS encoding support
-- The application prioritizes newly added devices at the beginning of variation lists
-- Product-specific device grouping enables handling multiple products with different device sets
-- SKU generation is product-scoped to avoid conflicts between different products
-- Docker is required for proper development and deployment - no native Python/Node.js setup documented
+## Common Issues & Solutions
 
-## Recent Enhancements
-- **Multi-device Addition**: Support for comma-separated device input (`test1, test2, test3`)
-- **Device Prioritization**: New devices automatically placed at beginning of variation definitions
-- **Product Grouping**: Modal dialog system for viewing product-specific device lists
-- **Enhanced Debugging**: Extensive logging and visual debugging elements in DeviceManager component
+### Device Position Issues
+```bash
+# Debug: Check request payload
+docker logs rakuten-sku-backend | grep custom_device_order
+
+# Debug: Add logging
+docker exec rakuten-sku-backend sed -i 's/def _update_device_definition/def _update_device_definition\n        print(f"DEBUG: custom_device_order={custom_device_order}")/' /app/services/rakuten_processor.py
+```
+
+### Database Path Issues
+- Docker container: Always use `/app/` prefix
+- Local development: `./backend/product_attributes_new.db`
+- Docker path: `/app/product_attributes_new.db`
+
+### Encoding Issues
+```bash
+# Check file encoding
+docker exec rakuten-sku-backend python -c "import chardet; print(chardet.detect(open('file.csv', 'rb').read()))"
+
+# Force Shift-JIS conversion
+docker exec rakuten-sku-backend python -c "import pandas as pd; df = pd.read_csv('file.csv', encoding='shift-jis'); df.to_csv('output.csv', encoding='shift-jis', index=False)"
+```
+
+### Frontend Not Updating
+```bash
+# Clear browser cache
+Ctrl + Shift + Delete → Clear cached images and files
+
+# Force rebuild with new hash
+docker-compose build --no-cache frontend --build-arg CACHEBUST=$(date +%s)
+```
+
+## Deployment
+
+### NAS Deployment (192.168.24.240)
+```bash
+# Automated deployment
+./nas-direct-deploy.bat
+
+# Manual deployment via Portainer
+1. ./export-and-deploy.bat  # Creates .tar files
+2. Upload to NAS: /export/*.tar
+3. Import in Portainer: Images → Import
+4. Deploy stack: portainer-stack.yml
+```
+
+### Production Checklist
+- [ ] Set `PYTHONUNBUFFERED=1` for real-time logging
+- [ ] Set `TZ=Asia/Tokyo` for JST timestamps
+- [ ] Verify health checks pass
+- [ ] Confirm volume mounts for data persistence
+- [ ] Configure Nginx proxy for API routes
+
+## Development Guidelines
+
+### When Modifying Device Logic
+1. Preserve `custom_device_order` if provided
+2. Distinguish between `devices_to_add` (all) and truly new devices
+3. Update parent row variation definitions after changes
+4. Test with multi-product CSV files
+
+### When Adding Database Features
+1. Use `/app/` prefix absolute paths in Docker
+2. Handle duplicates with UPDATE not INSERT
+3. Maintain `usage_count` for tracking
+4. Include brand auto-detection logic
+
+### When Updating Frontend
+1. Run `npm run build` in dev environment before Docker build
+2. TypeScript compile check: `npx tsc --noEmit`
+3. Clear browser cache after deployment
+4. Ensure API endpoint contracts match backend

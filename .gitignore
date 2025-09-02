@@ -83,3 +83,7 @@ Desktop.ini
 *.temp
 .tmp/
 temp/
+# Docker export files
+*.tar
+export/*.tar
+

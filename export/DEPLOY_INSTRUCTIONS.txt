@@ -1,0 +1,36 @@
+NAS Deployment Instructions for Rakuten SKU Manager
+====================================================
+
+Files in this directory:
+- backend.tar: Backend Docker image (216MB)
+- frontend.tar: Frontend Docker image (22MB)
+- docker-compose.yml: Docker Compose configuration
+
+Method 1: Manual Transfer and Deploy
+-------------------------------------
+1. Copy this entire 'export' folder to your NAS
+2. SSH into NAS: ssh admin@192.168.24.240
+3. Navigate to the copied folder
+4. Load Docker images:
+   docker load -i backend.tar
+   docker load -i frontend.tar
+5. Start services:
+   docker-compose up -d
+
+Method 2: Using Portainer
+-------------------------
+1. Access Portainer: http://192.168.24.240:9000
+2. Go to "Images" → "Import"
+3. Upload backend.tar and frontend.tar
+4. Go to "Stacks" → "Add stack"
+5. Upload docker-compose.yml
+6. Deploy the stack
+
+Access URLs after deployment:
+- Application: http://192.168.24.240:3000
+- API Docs: http://192.168.24.240:8000/docs
+
+To verify deployment:
+docker ps
+docker logs rakuten-sku-backend
+docker logs rakuten-sku-frontend

@@ -15,6 +15,7 @@ from .csv_processor import CSVProcessor
 from .device_manager import DeviceManager
 from .rakuten_processor import RakutenCSVProcessor
 from .validator import Validator
+import sqlite3
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,11 @@ class BatchProcessor:
         devices_to_add: Optional[List[str]] = None,
         devices_to_remove: Optional[List[str]] = None,
         output_format: str = 'single',
-        apply_to_all: bool = True
+        apply_to_all: bool = True,
+        device_attributes: Optional[List[Dict]] = None,
+        add_position: Optional[str] = None,
+        after_device: Optional[str] = None,
+        custom_device_order: Optional[List[str]] = None
     ) -> Dict:
         """
         Process multiple CSV files in batch
@@ -114,7 +119,11 @@ class BatchProcessor:
                     final_devices_to_add if apply_to_all else devices_to_add,
                     devices_to_remove if apply_to_all else None,
                     output_format,
-                    batch_id
+                    batch_id,
+                    device_attributes,
+                    add_position,
+                    after_device,
+                    custom_device_order
                 )
                 futures.append((file_path, future))
             
@@ -159,7 +168,11 @@ class BatchProcessor:
         devices_to_add: Optional[List[str]],
         devices_to_remove: Optional[List[str]],
         output_format: str,
-        batch_id: str
+        batch_id: str,
+        device_attributes: Optional[List[Dict]] = None,
+        add_position: Optional[str] = None,
+        after_device: Optional[str] = None,
+        custom_device_order: Optional[List[str]] = None
     ) -> Dict:
         """Process a single file in the batch"""
         try:
@@ -168,12 +181,34 @@ class BatchProcessor:
             # Read CSV
             df = self.csv_processor.read_csv(file_path)
             
+            # Get ALL device attributes from database (both new and existing)
+            all_devices_in_csv = set()
+            if 'バリエーション項目選択肢2' in df.columns:
+                all_devices_in_csv = set(df['バリエーション項目選択肢2'].dropna().unique())
+            if devices_to_add:
+                all_devices_in_csv.update(devices_to_add)
+            
+            # Get attributes for ALL devices (new and existing)
+            if all_devices_in_csv:
+                device_attributes = self._get_device_attributes_from_db(list(all_devices_in_csv))
+                logger.info(f"[BATCH] Got attributes for {len(device_attributes)} devices from DB")
+                logger.info(f"[BATCH] Device attributes from DB: {device_attributes}")
+            else:
+                device_attributes = device_attributes if device_attributes else None
+            
             # Process with Rakuten processor
-            if devices_to_add or devices_to_remove:
+            if devices_to_add or devices_to_remove or device_attributes:
+                logger.info(f"[BATCH] Processing with devices_to_add: {devices_to_add}")
+                logger.info(f"[BATCH] Processing with device_attributes: {device_attributes}")
                 df = self.rakuten_processor.process_csv(
                     df,
                     devices_to_add=devices_to_add,
-                    devices_to_remove=devices_to_remove
+                    devices_to_remove=devices_to_remove,
+                    device_attributes=device_attributes,
+                    apply_db_attributes_to_existing=True,
+                    add_position=add_position,
+                    after_device=after_device,
+                    custom_device_order=custom_device_order
                 )
             
             # Validate
@@ -210,6 +245,55 @@ class BatchProcessor:
                 'status': 'error',
                 'message': str(e)
             }
+    
+    def _get_device_attributes_from_db(self, devices: List[str]) -> List[Dict]:
+        """Get device attributes from database for given devices"""
+        try:
+            # Connect to database
+            db_path = Path('/app/product_attributes_new.db')
+            if not db_path.exists():
+                # Fallback to local path if not in Docker
+                db_path = Path(__file__).parent.parent / 'product_attributes_new.db'
+            
+            if not db_path.exists():
+                logger.warning("Product attributes database not found")
+                return []
+            
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            
+            device_attributes = []
+            for device in devices:
+                # Query database for device attributes
+                cursor.execute('''
+                    SELECT device_name, attribute_value, size_category
+                    FROM device_attributes
+                    WHERE device_name = ?
+                ''', (device,))
+                
+                result = cursor.fetchone()
+                if result:
+                    device_attributes.append({
+                        'device': result[0],
+                        'attribute_value': result[1],
+                        'size_category': result[2] if result[2] else None
+                    })
+                    logger.info(f"[BATCH] Found DB attribute for {device}: {result[1]}")
+                else:
+                    # If device not in database, use device name as attribute_value
+                    device_attributes.append({
+                        'device': device,
+                        'attribute_value': device,
+                        'size_category': None
+                    })
+                    logger.warning(f"[BATCH] No DB attribute found for {device}, using device name")
+            
+            conn.close()
+            return device_attributes
+            
+        except Exception as e:
+            logger.error(f"Error getting device attributes from database: {e}")
+            return []
     
     async def process_folder(
         self,

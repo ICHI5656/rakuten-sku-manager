@@ -7,6 +7,12 @@ export interface ProcessRequest {
   after_device?: string;
   custom_device_order?: string[];
   insert_index?: number;
+  device_brand?: string;
+  device_attributes?: Array<{
+    device: string;
+    attribute_value?: string;
+    size_category?: string;
+  }>;
 }
 
 export interface ProcessResponse {

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Test</title>
+</head>
+<body>
+    <h1>Rakuten SKU Manager - Simple Test</h1>
+    <div id="status">Loading...</div>
+    <div id="api-test"></div>
+    
+    <h2>Direct Links:</h2>
+    <ul>
+        <li><a href="http://localhost:3000" target="_blank">Open App (localhost:3000)</a></li>
+        <li><a href="http://localhost:8000/docs" target="_blank">API Docs (localhost:8000)</a></li>
+        <li><a href="http://192.168.24.240:3000" target="_blank">NAS App (192.168.24.240:3000)</a></li>
+        <li><a href="http://192.168.24.240:8000/docs" target="_blank">NAS API (192.168.24.240:8000)</a></li>
+    </ul>
+
+    <script>
+        // Test API connection
+        fetch('http://localhost:8000/api/product-attributes/brands')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').innerHTML = '✅ API Connected';
+                document.getElementById('api-test').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            })
+            .catch(error => {
+                document.getElementById('status').innerHTML = '❌ API Error: ' + error.message;
+            });
+    </script>
+</body>
+</html>

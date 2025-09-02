@@ -1,36 +1,53 @@
-import React from 'react'
+import React, { useState, useMemo } from 'react'
 import ReactDOM from 'react-dom/client'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
-import App from './App'
+import AppWithRouting from './AppWithRouting'
+import ThemeSelector from './components/ThemeSelector'
 
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#bf0000',
-    },
-    secondary: {
-      main: '#333333',
-    },
-  },
-  typography: {
-    fontFamily: [
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      '"Helvetica Neue"',
-      'Arial',
-      'sans-serif',
-    ].join(','),
-  },
-});
+function Main() {
+  const [primaryColor, setPrimaryColor] = useState('#bf0000');
+  const [secondaryColor, setSecondaryColor] = useState('#333333');
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <App />
-    </ThemeProvider>
-  </React.StrictMode>,
-)
+  const theme = useMemo(
+    () => createTheme({
+      palette: {
+        primary: {
+          main: primaryColor,
+        },
+        secondary: {
+          main: secondaryColor,
+        },
+      },
+      typography: {
+        fontFamily: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          'sans-serif',
+        ].join(','),
+      },
+    }),
+    [primaryColor, secondaryColor]
+  );
+
+  const handleThemeChange = (primary: string, secondary: string) => {
+    setPrimaryColor(primary);
+    setSecondaryColor(secondary);
+  };
+
+  return (
+    <React.StrictMode>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <ThemeSelector onThemeChange={handleThemeChange} />
+        <AppWithRouting />
+      </ThemeProvider>
+    </React.StrictMode>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(<Main />)

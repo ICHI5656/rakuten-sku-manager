@@ -1,0 +1,45 @@
+===== 簡単NASデプロイ手順 =====
+
+1. コマンドプロンプトを開く
+
+2. ファイル転送（各コマンド後にパスワード入力: Ichio_22520113）
+```
+cd C:\Users\info\Desktop\sin\rakuten_sku_manager
+scp export\backend.tar quest@192.168.24.240:/home/quest/
+scp export\frontend-fixed.tar quest@192.168.24.240:/home/quest/frontend.tar
+scp docker-compose-nas-simple.yml quest@192.168.24.240:/home/quest/docker-compose.yml
+```
+
+3. NASにSSH接続
+```
+ssh quest@192.168.24.240
+```
+パスワード: Ichio_22520113
+
+4. SSH接続後、以下を順番に実行:
+```
+sudo docker load -i backend.tar
+sudo docker load -i frontend.tar
+sudo docker-compose up -d
+sudo docker ps
+```
+
+5. ブラウザでアクセス:
+- http://192.168.24.240:3000 (アプリケーション)
+- http://192.168.24.240:8000/docs (API)
+
+===== エラー時の対処 =====
+
+ポートが使用中の場合:
+```
+sudo docker-compose down
+sudo docker ps -a
+sudo docker rm $(sudo docker ps -aq)
+sudo docker-compose up -d
+```
+
+ログ確認:
+```
+sudo docker logs rakuten-sku-backend
+sudo docker logs rakuten-sku-frontend
+```

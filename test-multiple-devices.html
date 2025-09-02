@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>複数機種追加機能テスト</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        input { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; margin: 5px; }
+        .devices-list { 
+            background: #f5f5f5; 
+            padding: 15px; 
+            margin: 20px 0; 
+            border-radius: 5px;
+        }
+        .device-item {
+            background: white;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .remove-btn {
+            color: red;
+            cursor: pointer;
+        }
+        .info { 
+            background: #e3f2fd; 
+            padding: 10px; 
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>複数機種追加機能テスト</h1>
+        
+        <div class="info">
+            <h3>入力形式のテスト:</h3>
+            <ul>
+                <li>半角カンマ区切り: test1, test2, test3</li>
+                <li>全角カンマ区切り: test1，test2，test3</li>
+                <li>全角スペース混在: test1　，　test2　，　test3</li>
+                <li>スペースなし: test1,test2,test3</li>
+            </ul>
+        </div>
+        
+        <input type="text" id="deviceInput" placeholder="機種名を入力（カンマ区切りで複数可）">
+        <button onclick="addDevices()">機種を追加</button>
+        <button onclick="clearAll()">全てクリア</button>
+        
+        <div class="devices-list">
+            <h3>追加予定の機種: <span id="deviceCount">0</span>個</h3>
+            <div id="devicesList"></div>
+        </div>
+        
+        <div id="debug" style="background: #f0f0f0; padding: 10px; margin-top: 20px;">
+            <h4>デバッグ情報:</h4>
+            <pre id="debugInfo"></pre>
+        </div>
+    </div>
+
+    <script>
+        let devicesToAdd = [];
+        
+        function normalizeInput(input) {
+            // 全角カンマを半角に、全角スペースを半角に変換
+            return input
+                .replace(/，/g, ',')  // 全角カンマを半角に
+                .replace(/　/g, ' '); // 全角スペースを半角に
+        }
+        
+        function addDevices() {
+            const input = document.getElementById('deviceInput').value;
+            if (!input.trim()) return;
+            
+            const normalizedInput = normalizeInput(input);
+            const devices = normalizedInput.split(',').map(d => d.trim()).filter(d => d);
+            
+            // デバッグ情報
+            const debugInfo = {
+                originalInput: input,
+                normalizedInput: normalizedInput,
+                devices: devices,
+                devicesCount: devices.length
+            };
+            
+            document.getElementById('debugInfo').textContent = JSON.stringify(debugInfo, null, 2);
+            
+            // 重複を避けて追加
+            const uniqueNewDevices = devices.filter(d => !devicesToAdd.includes(d));
+            if (uniqueNewDevices.length > 0) {
+                devicesToAdd = [...devicesToAdd, ...uniqueNewDevices];
+                document.getElementById('deviceInput').value = '';
+                updateDisplay();
+            }
+        }
+        
+        function removeDevice(device) {
+            devicesToAdd = devicesToAdd.filter(d => d !== device);
+            updateDisplay();
+        }
+        
+        function clearAll() {
+            devicesToAdd = [];
+            document.getElementById('deviceInput').value = '';
+            updateDisplay();
+        }
+        
+        function updateDisplay() {
+            const listDiv = document.getElementById('devicesList');
+            const countSpan = document.getElementById('deviceCount');
+            
+            countSpan.textContent = devicesToAdd.length;
+            
+            if (devicesToAdd.length === 0) {
+                listDiv.innerHTML = '<p style="color: #666;">まだ追加する機種がありません</p>';
+            } else {
+                listDiv.innerHTML = devicesToAdd.map(device => 
+                    `<div class="device-item">
+                        <span>${device}</span>
+                        <span class="remove-btn" onclick="removeDevice('${device}')">✕</span>
+                    </div>`
+                ).join('');
+            }
+        }
+        
+        // Enter キーで追加
+        document.getElementById('deviceInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addDevices();
+            }
+        });
+        
+        // 初期表示
+        updateDisplay();
+    </script>
+</body>
+</html>

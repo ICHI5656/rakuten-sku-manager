@@ -1,4 +1,4 @@
-import React, { useState, Fragment } from 'react';
+import React, { useState, Fragment, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -40,6 +40,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import SwapVertIcon from '@mui/icons-material/SwapVert';
 import DeviceOrderEditor from './DeviceOrderEditor';
 import DeviceListOrganizer from './DeviceListOrganizer';
+import DeviceSelector from './DeviceSelector';
 
 interface DeviceManagerProps {
   devices: string[];
@@ -70,6 +71,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
   const [showListOrganizer, setShowListOrganizer] = useState(false);
   const [finalDeviceOrder, setFinalDeviceOrder] = useState<string[] | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<{productId: string, devices: string[]} | null>(null);
+  const [showDeviceSelector, setShowDeviceSelector] = useState(false);
   
   // Database integration states
   const [showDatabaseDialog, setShowDatabaseDialog] = useState(false);
@@ -83,6 +85,12 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
   // Debug log
   console.log('DeviceManager received devices:', JSON.stringify(devices, null, 2));
   console.log('DeviceManager received productDevices:', productDevices);
+  
+  // デバッグ用: devicesToAdd の変化を監視
+  useEffect(() => {
+    console.log('[DEBUG] devicesToAdd state changed:', devicesToAdd);
+    console.log('[DEBUG] devicesToAdd length:', devicesToAdd.length);
+  }, [devicesToAdd]);
   
   // 順序確認用のデバッグログ
   if (devices && devices.length > 0) {
@@ -133,39 +141,62 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
 
   const handleAddDevice = () => {
     if (newDevice.trim()) {
-      // カンマ区切りで複数機種を処理
-      const devices = newDevice.split(',').map(d => d.trim()).filter(d => d);
+      const deviceName = newDevice.trim();
       
-      // 単一デバイスの場合、データベース登録ダイアログを表示
-      if (devices.length === 1) {
-        const deviceName = devices[0];
-        setPendingDevice(deviceName);
+      // デバイス名からブランドを推測
+      const lowerName = deviceName.toLowerCase();
+      let suggestedBrand = 'その他';
+      if (lowerName.includes('iphone')) suggestedBrand = 'iPhone';
+      else if (lowerName.includes('xperia') || lowerName.includes('so-')) suggestedBrand = 'Xperia';
+      else if (lowerName.includes('aquos') || lowerName.includes('sh-')) suggestedBrand = 'AQUOS';
+      else if (lowerName.includes('galaxy')) suggestedBrand = 'Galaxy';
+      else if (lowerName.includes('arrows')) suggestedBrand = 'ARROWS';
+      else if (lowerName.includes('huawei') || lowerName.includes('p30') || lowerName.includes('p40')) suggestedBrand = 'Huawei';
+      else if (lowerName.includes('pixel')) suggestedBrand = 'Pixel';
+      else if (lowerName.includes('oppo')) suggestedBrand = 'OPPO';
+      else if (lowerName.includes('xiaomi') || lowerName.includes('mi ') || lowerName.includes('redmi')) suggestedBrand = 'Xiaomi';
+      
+      setPendingDevice(deviceName);
+      setDeviceBrand(suggestedBrand);
+      setDeviceAttributeValue(deviceName); // デフォルトで機種名と同じ
+      setShowDatabaseDialog(true);
+    }
+  };
+  
+  const handleDeviceSelectorConfirm = (selectedDevices: string[], deviceInfo?: any[]) => {
+    console.log('[DeviceManager] DeviceSelector confirmed with:', selectedDevices);
+    console.log('[DeviceManager] Device info:', deviceInfo);
+    
+    if (selectedDevices.length > 0) {
+      const uniqueNewDevices = selectedDevices.filter(d => !devicesToAdd.includes(d));
+      console.log('[DeviceManager] Unique new devices to add:', uniqueNewDevices);
+      
+      if (uniqueNewDevices.length > 0) {
+        setDevicesToAdd(prev => [...prev, ...uniqueNewDevices]);
         
-        // デバイス名からブランドを推測
-        const lowerName = deviceName.toLowerCase();
-        let suggestedBrand = 'その他';
-        if (lowerName.includes('iphone')) suggestedBrand = 'iPhone';
-        else if (lowerName.includes('xperia') || lowerName.includes('so-')) suggestedBrand = 'Xperia';
-        else if (lowerName.includes('aquos') || lowerName.includes('sh-')) suggestedBrand = 'AQUOS';
-        else if (lowerName.includes('galaxy')) suggestedBrand = 'Galaxy';
-        else if (lowerName.includes('arrows')) suggestedBrand = 'ARROWS';
-        else if (lowerName.includes('huawei') || lowerName.includes('p30') || lowerName.includes('p40')) suggestedBrand = 'Huawei';
-        else if (lowerName.includes('pixel')) suggestedBrand = 'Pixel';
-        else if (lowerName.includes('oppo')) suggestedBrand = 'OPPO';
-        else if (lowerName.includes('xiaomi') || lowerName.includes('mi ') || lowerName.includes('redmi')) suggestedBrand = 'Xiaomi';
-        
-        setDeviceBrand(suggestedBrand);
-        setDeviceAttributeValue(deviceName); // デフォルトで機種名と同じ
-        setShowDatabaseDialog(true);
-      } else {
-        // 複数デバイスの場合は直接追加
-        const uniqueNewDevices = devices.filter(d => !devicesToAdd.includes(d));
-        if (uniqueNewDevices.length > 0) {
-          setDevicesToAdd(prev => [...prev, ...uniqueNewDevices]);
-          setNewDevice('');
+        // デバイス情報から属性値とブランドを設定
+        if (deviceInfo && deviceInfo.length > 0) {
+          const newAttributesMap = new Map(deviceAttributesMap);
+          deviceInfo.forEach(info => {
+            if (uniqueNewDevices.includes(info.device_name)) {
+              newAttributesMap.set(info.device_name, {
+                attribute_value: info.attribute_value || info.device_name,
+                size_category: info.size_category || ''
+              });
+            }
+          });
+          setDeviceAttributesMap(newAttributesMap);
+          
+          // 最初のデバイスのブランドを設定（全デバイスが同じブランドの場合）
+          const brands = [...new Set(deviceInfo.map(d => d.brand))];
+          if (brands.length === 1) {
+            setDeviceBrand(brands[0]);
+            console.log('[DeviceManager] Setting brand from selected devices:', brands[0]);
+          }
         }
       }
     }
+    setShowDeviceSelector(false);
   };
   
   const handleDatabaseSave = async () => {
@@ -494,7 +525,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
               新機種追加
             </Typography>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              追加する機種名を入力してください（複数の場合はカンマ区切り）
+              新しい機種をデータベースに登録するか、既存の機種をデータベースから選択できます
             </Typography>
             
             {/* カスタマイズ状態の表示 */}
@@ -714,8 +745,8 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
                     handleAddDevice();
                   }
                 }}
-                placeholder="例: iPhone 15 Pro, Galaxy S24, Pixel 8"
-                helperText="複数機種を追加する場合: test1, test2, test3"
+                placeholder="新機種名を入力 (例: iPhone 15 Pro)"
+                helperText="新しい機種をデータベースに登録しながら追加します"
               />
               <Button
                 variant="contained"
@@ -723,13 +754,32 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
                 startIcon={<AddIcon />}
                 disabled={!newDevice.trim()}
               >
-                追加
+                新規登録
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  console.log('[DeviceManager] DBから選択 button clicked');
+                  console.log('Current devices:', devices);
+                  console.log('Devices to add:', devicesToAdd);
+                  setShowDeviceSelector(true);
+                }}
+                startIcon={<OpenInNewIcon />}
+                color="primary"
+              >
+                DBから選択
               </Button>
             </Box>
 
 
             <Typography variant="subtitle2" gutterBottom>
-              追加予定の機種:
+              追加予定の機種: {devicesToAdd.length > 0 && `(${devicesToAdd.length}個)`}
+              {/* デバッグ用表示 */}
+              {devicesToAdd.length > 0 && (
+                <span style={{ marginLeft: '10px', fontSize: '12px', color: '#666' }}>
+                  [{devicesToAdd.join(', ')}]
+                </span>
+              )}
             </Typography>
             
             {devicesToAdd.length === 0 ? (
@@ -738,9 +788,9 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
               </Typography>
             ) : (
               <List>
-                {devicesToAdd.map((device) => (
+                {devicesToAdd.map((device, index) => (
                   <ListItem
-                    key={device}
+                    key={`${device}-${index}`}
                     secondaryAction={
                       <IconButton 
                         edge="end" 
@@ -913,6 +963,14 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
           />
         </DialogContent>
       </Dialog>
+
+      {/* データベース機種選択ダイアログ */}
+      <DeviceSelector
+        open={showDeviceSelector}
+        onClose={() => setShowDeviceSelector(false)}
+        onConfirm={handleDeviceSelectorConfirm}
+        existingDevices={[...(devices || []), ...(devicesToAdd || [])]}
+      />
 
       {/* 商品別機種表示モーダル */}
       <Dialog 

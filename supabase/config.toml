@@ -1,0 +1,44 @@
+# Supabase Configuration for Rakuten SKU Manager
+
+# API Settings
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+# Database Settings
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+# Dashboard Settings
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost"
+
+# Auth Settings
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://localhost:3000"]
+jwt_expiry = 3600
+enable_signup = true
+email.enable_signup = true
+email.enable_confirmations = false
+
+# Storage Settings
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+# Edge Functions
+[functions]
+"api" = { verify_jwt = false }
+
+# Local Development
+[local]
+enabled = true
