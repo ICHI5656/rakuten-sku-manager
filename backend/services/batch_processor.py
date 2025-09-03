@@ -52,7 +52,8 @@ class BatchProcessor:
         device_attributes: Optional[List[Dict]] = None,
         add_position: Optional[str] = None,
         after_device: Optional[str] = None,
-        custom_device_order: Optional[List[str]] = None
+        custom_device_order: Optional[List[str]] = None,
+        process_mode: str = 'auto'  # 'auto', 'same_devices', 'different_devices'
     ) -> Dict:
         """
         Process multiple CSV files in batch
@@ -84,46 +85,87 @@ class BatchProcessor:
         all_devices = []  # Use list to maintain order
         seen_devices = set()  # Track seen devices
         
-        # First pass: collect all unique devices from all files
-        if apply_to_all and devices_to_add:
-            logger.info(f"Collecting devices from {len(file_paths)} files")
-            for file_path in file_paths:
-                try:
-                    df = self.csv_processor.read_csv(file_path)
-                    file_devices = self.device_manager.extract_devices(df)
-                    # Add devices maintaining order
-                    for device in file_devices:
-                        if device not in seen_devices:
-                            all_devices.append(device)
-                            seen_devices.add(device)
-                except Exception as e:
-                    logger.error(f"Error reading {file_path}: {e}")
+        # 機種リストを収集してファイルを分類
+        file_device_groups = {}  # 機種リストごとにファイルをグループ化
+        file_device_info = {}  # 各ファイルの機種情報を保存
         
-        # Merge new devices with existing devices (maintain order)
-        if apply_to_all and devices_to_add:
-            for device in devices_to_add:
-                if device not in seen_devices:
-                    all_devices.append(device)
-                    seen_devices.add(device)
-            final_devices_to_add = all_devices
+        logger.info(f"Analyzing {len(file_paths)} files for device patterns")
+        for file_path in file_paths:
+            try:
+                df = self.csv_processor.read_csv(file_path)
+                file_devices = self.device_manager.extract_devices(df)
+                device_list_key = tuple(sorted(file_devices))  # 機種リストをキーとして使用
+                
+                if device_list_key not in file_device_groups:
+                    file_device_groups[device_list_key] = []
+                file_device_groups[device_list_key].append(file_path)
+                file_device_info[str(file_path)] = file_devices
+                
+                # 全体の機種リストに追加
+                for device in file_devices:
+                    if device not in seen_devices:
+                        all_devices.append(device)
+                        seen_devices.add(device)
+            except Exception as e:
+                logger.error(f"Error reading {file_path}: {e}")
+        
+        # 処理モードの判定
+        is_same_devices = len(file_device_groups) == 1
+        if process_mode == 'auto':
+            process_mode = 'same_devices' if is_same_devices else 'different_devices'
+        
+        logger.info(f"Device group count: {len(file_device_groups)}, Process mode: {process_mode}")
+        
+        # 処理モードによる分岐
+        if process_mode == 'same_devices' or (apply_to_all and is_same_devices):
+            # 同じ機種リストの場合：従来通り一括処理
+            if devices_to_add:
+                for device in devices_to_add:
+                    if device not in seen_devices:
+                        all_devices.append(device)
+                        seen_devices.add(device)
+            final_devices_to_add = all_devices if apply_to_all else devices_to_add
         else:
-            final_devices_to_add = devices_to_add
+            # 異なる機種リストの場合：個別処理
+            final_devices_to_add = None  # 各ファイルで個別に処理
         
         # Process each file
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = []
             for file_path in file_paths:
+                # 機種違いの場合は各ファイルで個別に機種を処理
+                if process_mode == 'different_devices' and devices_to_add:
+                    # このファイルの既存機種を取得
+                    existing_devices = file_device_info.get(str(file_path), [])
+                    # 新機種と既存機種を結合（カスタムオーダーがある場合はそれを使用）
+                    if custom_device_order:
+                        file_specific_order = custom_device_order
+                    else:
+                        # 位置指定に従って機種リストを構成
+                        file_specific_order = self._build_device_order(
+                            existing_devices,
+                            devices_to_add,
+                            add_position,
+                            after_device
+                        )
+                    file_devices_to_add = devices_to_add
+                    file_custom_order = file_specific_order
+                else:
+                    # 同じ機種の場合は共通の処理
+                    file_devices_to_add = final_devices_to_add if apply_to_all else devices_to_add
+                    file_custom_order = custom_device_order
+                
                 future = executor.submit(
                     self._process_single_file,
                     file_path,
-                    final_devices_to_add if apply_to_all else devices_to_add,
+                    file_devices_to_add,
                     devices_to_remove if apply_to_all else None,
                     output_format,
                     batch_id,
                     device_attributes,
                     add_position,
                     after_device,
-                    custom_device_order
+                    file_custom_order
                 )
                 futures.append((file_path, future))
             
@@ -154,7 +196,9 @@ class BatchProcessor:
             'status': 'completed',
             'results': results,
             'end_time': datetime.now().isoformat(),
-            'all_devices': all_devices if apply_to_all else None  # all_devices is already a list
+            'all_devices': all_devices if apply_to_all else None,  # all_devices is already a list
+            'process_mode': process_mode,
+            'device_groups': len(file_device_groups)
         })
         
         logger.info(f"Batch {batch_id} completed with {len(results)} results")
@@ -245,6 +289,22 @@ class BatchProcessor:
                 'status': 'error',
                 'message': str(e)
             }
+    
+    def _build_device_order(
+        self,
+        existing_devices: List[str],
+        new_devices: List[str],
+        add_position: Optional[str] = None,
+        after_device: Optional[str] = None
+    ) -> List[str]:
+        """Build device order based on position specification"""
+        if add_position == 'start':
+            return new_devices + existing_devices
+        elif add_position == 'after' and after_device and after_device in existing_devices:
+            index = existing_devices.index(after_device) + 1
+            return existing_devices[:index] + new_devices + existing_devices[index:]
+        else:  # 'end' or default
+            return existing_devices + new_devices
     
     def _get_device_attributes_from_db(self, devices: List[str]) -> List[Dict]:
         """Get device attributes from database for given devices"""

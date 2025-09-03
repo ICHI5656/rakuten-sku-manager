@@ -869,7 +869,8 @@ async def batch_process_csv(
     apply_to_all: bool = Form(True),
     add_position: Optional[str] = Form(None),
     after_device: Optional[str] = Form(None),
-    custom_device_order: Optional[str] = Form(None)
+    custom_device_order: Optional[str] = Form(None),
+    process_mode: Optional[str] = Form('auto')  # 'auto', 'same_devices', 'different_devices'
 ):
     """Process multiple CSV files in batch"""
     logger.info(f"Batch processing: {batch_id}")
@@ -960,7 +961,8 @@ async def batch_process_csv(
         device_attributes=device_attributes,
         add_position=add_position,
         after_device=after_device,
-        custom_device_order=custom_order
+        custom_device_order=custom_order,
+        process_mode=process_mode  # Pass process_mode to batch processor
     )
     
     return result

@@ -71,12 +71,41 @@ const BatchProcessor: React.FC<BatchProcessorProps> = ({
     setError(null);
 
     try {
+      // Check if files have different device lists
+      const deviceListPatterns = new Set();
+      let hasDifferentDeviceLists = false;
+      
+      if (allProductDevices) {
+        Object.values(allProductDevices).forEach((devices: any) => {
+          const pattern = Array.isArray(devices) ? devices.sort().join(',') : '';
+          deviceListPatterns.add(pattern);
+        });
+        hasDifferentDeviceLists = deviceListPatterns.size > 1;
+      }
+
       const formData = new FormData();
       formData.append('batch_id', batchId);
       formData.append('devices_to_add', JSON.stringify(addDevices));
       formData.append('devices_to_remove', JSON.stringify(removeDevices));
       formData.append('output_format', 'single');
       formData.append('apply_to_all', 'true');
+      
+      // Add position parameters if specified
+      if (position) {
+        formData.append('add_position', position);
+      }
+      if (afterDevice) {
+        formData.append('after_device', afterDevice);
+      }
+      if (customOrder && customOrder.length > 0) {
+        formData.append('custom_device_order', JSON.stringify(customOrder));
+      }
+      
+      // Set process mode based on device list patterns
+      const processMode = hasDifferentDeviceLists ? 'different_devices' : 'same_devices';
+      formData.append('process_mode', processMode);
+      
+      console.log(`Batch processing with mode: ${processMode} (${deviceListPatterns.size} unique device patterns)`);
 
       const response = await fetch('/api/batch-process', {
         method: 'POST',
