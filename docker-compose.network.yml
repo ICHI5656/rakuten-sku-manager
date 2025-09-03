@@ -1,0 +1,60 @@
+version: '3.8'
+
+# ネットワーク共有用のDocker Compose設定
+# 同じLAN内の他のPCからアクセス可能
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rakuten-sku-backend
+    ports:
+      # すべてのネットワークインターフェースでリッスン
+      - "0.0.0.0:8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Tokyo
+      # CORS設定 - ネットワーク内のすべてのアドレスを許可
+      - CORS_ORIGINS=["*"]
+    networks:
+      - rakuten-sku-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # ビルド時にAPIのベースURLを設定（ホストPCのIPアドレスに変更）
+        - VITE_API_BASE_URL=http://HOST_IP:8000
+    container_name: rakuten-sku-frontend
+    ports:
+      # すべてのネットワークインターフェースでリッスン
+      - "0.0.0.0:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - rakuten-sku-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  rakuten-sku-network:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local
