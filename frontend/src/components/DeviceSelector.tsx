@@ -16,6 +16,10 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 
@@ -45,6 +49,8 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
   const [displayedDevices, setDisplayedDevices] = useState<DeviceInfo[]>([]);
   const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState<string>('all');
+  const [brands, setBrands] = useState<Array<{id: string, name: string, name_jp: string, display_order: number, device_count: number}>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,14 +66,16 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
         console.log('HUAWEI devices in existingDevices:', huaweiExisting);
       }
       loadDevices();
+      loadBrands();
     } else {
       // ダイアログが閉じたときにリセット
       setSelectedDevices(new Set());
       setSearchTerm('');
+      setSelectedBrand('all');
     }
   }, [open]);
 
-  // 検索条件が変わったときにフィルタリング
+  // 検索条件とブランドフィルタが変わったときにフィルタリング
   useEffect(() => {
     if (!allDevices || allDevices.length === 0) {
       setDisplayedDevices([]);
@@ -76,32 +84,27 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
 
     let filtered = [...allDevices];
     
+    // ブランドでフィルタリング
+    if (selectedBrand && selectedBrand !== 'all') {
+      // ブランドIDまたは名前でマッチング
+      filtered = filtered.filter(d => {
+        return d.brand === selectedBrand || 
+               d.brand === brands.find(b => b.id === selectedBrand)?.name;
+      });
+    }
+    
+    // 検索条件でフィルタリング
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      console.log(`Searching for: "${searchTerm}" (lowercase: "${search}")`);
-      
       filtered = filtered.filter(d => {
         const deviceNameMatch = d.device_name && d.device_name.toLowerCase().includes(search);
-        const brandMatch = d.brand && d.brand.toLowerCase().includes(search);
         const attrMatch = d.attribute_value && d.attribute_value.toLowerCase().includes(search);
-        
-        // HUAWEIの特別なデバッグ
-        if (search.includes('huawei') && d.brand && d.brand.toUpperCase() === 'HUAWEI') {
-          console.log(`HUAWEI device check: ${d.device_name}, brand="${d.brand}", brandMatch=${brandMatch}`);
-        }
-        
-        return deviceNameMatch || brandMatch || attrMatch;
+        return deviceNameMatch || attrMatch;
       });
-      
-      console.log(`Filtered results: ${filtered.length} devices`);
-      if (search.includes('huawei')) {
-        const huaweiCount = filtered.filter(d => d.brand && d.brand.toUpperCase() === 'HUAWEI').length;
-        console.log(`HUAWEI devices in filtered results: ${huaweiCount}`);
-      }
     }
     
     setDisplayedDevices(filtered);
-  }, [allDevices, searchTerm]);
+  }, [allDevices, searchTerm, selectedBrand]);
 
   const loadDevices = async () => {
     setLoading(true);
@@ -143,6 +146,28 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
       setDisplayedDevices([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadBrands = async () => {
+    try {
+      const response = await fetch('/api/product-attributes/brands');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch brands');
+      }
+      
+      const data = await response.json();
+      
+      // ブランド情報を設定
+      if (data.brands && Array.isArray(data.brands)) {
+        setBrands(data.brands);
+      } else {
+        setBrands([]);
+      }
+    } catch (error) {
+      console.error('Error loading brands:', error);
+      setBrands([]);
     }
   };
 
@@ -222,17 +247,38 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
       </DialogTitle>
       
       <DialogContent dividers>
-        {/* 検索ボックス */}
+        {/* ブランド選択と検索ボックス */}
         <Box mb={2}>
-          <TextField
-            fullWidth
-            variant="outlined"
-            size="small"
-            placeholder="機種名、ブランド名で検索..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{ mb: 2 }}
-          />
+          {/* デバッグ: ブランド数表示 */}
+          <Typography variant="caption" color="text.secondary">
+            ブランド数: {brands.length} | 選択中: {selectedBrand}
+          </Typography>
+          <Box display="flex" gap={2} mb={2}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>ブランドを選択</InputLabel>
+              <Select
+                value={selectedBrand}
+                label="ブランドを選択"
+                onChange={(e) => setSelectedBrand(e.target.value)}
+              >
+                <MenuItem value="all">すべてのブランド</MenuItem>
+                {brands && brands.length > 0 && brands.map((brand) => (
+                  <MenuItem key={brand.id || brand.name} value={brand.id || brand.name}>
+                    {brand.name_jp ? brand.name_jp : brand.name ? brand.name : 'ブランド名なし'} ({brand.device_count || 0}機種)
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            <TextField
+              fullWidth
+              variant="outlined"
+              size="small"
+              placeholder="機種名で検索..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </Box>
           
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="body2" color="text.secondary">
@@ -254,7 +300,7 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
-            <Button size="small" onClick={loadDevices} sx={{ ml: 2 }}>
+            <Button size="small" onClick={() => { loadDevices(); loadBrands(); }} sx={{ ml: 2 }}>
               再試行
             </Button>
           </Alert>

@@ -3,12 +3,19 @@ Supabase client configuration for Rakuten SKU Manager
 """
 import os
 from typing import Optional
-from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 load_dotenv('.env.supabase')
+
+# Only import supabase if it's going to be used
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    Client = None
 
 class SupabaseConnection:
     """Manage Supabase connection and operations"""
@@ -18,13 +25,23 @@ class SupabaseConnection:
         self.use_supabase = os.getenv('USE_SUPABASE', 'false').lower() == 'true'
         
         if self.use_supabase:
-            url = os.getenv('SUPABASE_URL')
-            key = os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_ANON_KEY')
-            
-            if not url or not key:
-                raise ValueError("Supabase URL and key must be provided when USE_SUPABASE is true")
-            
-            self.client = create_client(url, key)
+            if not SUPABASE_AVAILABLE:
+                print("Warning: USE_SUPABASE is true but supabase package is not available. Falling back to SQLite.")
+                self.use_supabase = False
+            else:
+                url = os.getenv('SUPABASE_URL')
+                key = os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_ANON_KEY')
+                
+                if not url or not key:
+                    print("Warning: Supabase URL and key not provided. Falling back to SQLite.")
+                    self.use_supabase = False
+                else:
+                    try:
+                        self.client = create_client(url, key)
+                    except Exception as e:
+                        print(f"Warning: Failed to create Supabase client: {e}. Falling back to SQLite.")
+                        self.use_supabase = False
+                        self.client = None
     
     def is_enabled(self) -> bool:
         """Check if Supabase mode is enabled"""
