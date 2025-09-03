@@ -1,0 +1,27 @@
+================================
+簡単セットアップ手順
+================================
+
+【準備】
+1. Docker Desktop をインストール
+2. Docker Desktop を起動
+
+【セットアップ】
+1. 以下のコマンドをコピーしてコマンドプロンプトに貼り付け：
+
+git clone https://github.com/ICHI5656/rakuten-sku-manager.git
+cd rakuten-sku-manager
+docker-compose up -d
+
+2. 5分ほど待つ（初回のみ）
+
+3. ブラウザで開く：
+   http://localhost:3000
+
+【停止する場合】
+docker-compose down
+
+【ネットワーク共有する場合】
+start-network.bat をダブルクリック
+
+================================
