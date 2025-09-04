@@ -21,6 +21,7 @@ from services.device_manager import DeviceManager
 from services.validator import Validator
 from services.rakuten_processor import RakutenCSVProcessor
 from services.batch_processor import BatchProcessor
+from services.csv_splitter import CSVSplitter
 from database_api import router as database_router
 from product_attributes_api_v2 import router as product_attributes_router
 from models.schemas import ProcessRequest, DeviceAction, ProcessingOptions
@@ -66,6 +67,7 @@ device_manager = DeviceManager()
 validator = Validator()
 rakuten_processor = RakutenCSVProcessor(STATE_DIR / "sku_counters.json")
 batch_processor = BatchProcessor(STATE_DIR)
+csv_splitter = CSVSplitter(max_rows_per_file=60000)
 
 @app.get("/")
 async def root():
@@ -85,15 +87,15 @@ async def upload_csv(file: UploadFile = File(...)):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
     
-    # ファイルサイズチェック（最大100MB）
-    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    # ファイルサイズチェック（最大1GB for 200k+ rows）
+    MAX_FILE_SIZE = 1000 * 1024 * 1024  # 1GB
     contents = await file.read()
     file_size = len(contents)
     
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413, 
-            detail=f"File size {file_size / 1024 / 1024:.2f}MB exceeds maximum allowed size of 100MB"
+            detail=f"File size {file_size / 1024 / 1024:.2f}MB exceeds maximum allowed size of 1000MB"
         )
     
     # ファイルを元の位置に戻す
@@ -557,6 +559,18 @@ async def process_csv(request: ProcessRequest):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_files = []
         
+        # 強制的にSKU行のバリエーション2選択肢定義をクリア（保存前の最終処理）
+        if 'バリエーション2選択肢定義' in df.columns and 'SKU管理番号' in df.columns:
+            # SKU行をより確実に識別（空文字、nan、None以外のSKU番号を持つ行）
+            sku_mask = (df['SKU管理番号'].notna()) & \
+                      (df['SKU管理番号'] != '') & \
+                      (df['SKU管理番号'].astype(str) != 'nan')
+            
+            # 確実に空文字を設定（nanやNoneではなく''）
+            df.loc[sku_mask, 'バリエーション2選択肢定義'] = ''
+            cleared_count = sku_mask.sum()
+            print(f"[FINAL CHECK] Cleared バリエーション2選択肢定義 for {cleared_count} SKU rows before saving")
+        
         if request.output_format == "single":
             output_file = OUTPUT_DIR / f"item_{timestamp}.csv"
             print(f"Saving to: {output_file}")
@@ -572,12 +586,13 @@ async def process_csv(request: ProcessRequest):
                 output_files.append(str(output_file.name))
         
         elif request.output_format == "split_60k":
-            chunk_size = 60000
-            for i in range(0, len(df), chunk_size):
-                chunk_df = df.iloc[i:i+chunk_size]
-                output_file = OUTPUT_DIR / f"item_{timestamp}_{i//chunk_size + 1}.csv"
-                csv_processor.save_csv(chunk_df, output_file)
-                output_files.append(str(output_file.name))
+            # Use CSV splitter to maintain parent product integrity
+            base_filename = f"item_{timestamp}"
+            split_files = csv_splitter.split_by_parent_products(
+                df, OUTPUT_DIR, base_filename
+            )
+            output_files = [str(f.name) for f in split_files]
+            logger.info(f"Split into {len(output_files)} files maintaining parent product integrity")
         
         # Save SKU state
         sku_manager.save_state()
@@ -601,10 +616,74 @@ async def process_csv(request: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/download/{filename}")
-async def download_file(filename: str):
-    """Download processed CSV file"""
+async def download_file(filename: str, split: bool = False):
+    """
+    Download processed CSV file
+    Args:
+        filename: Name of the file to download
+        split: If True and file has >60k rows, split into multiple files
+    """
     # まず通常の出力ディレクトリを確認
     file_path = OUTPUT_DIR / filename
+    
+    # ファイルが存在する場合、SKU行のバリエーション2選択肢定義を最終確認してクリア
+    if file_path.exists():
+        try:
+            # ファイルを読み込み
+            df = pd.read_csv(file_path, encoding='shift_jis', dtype=str, keep_default_na=False)
+            
+            # 親行以外のすべての行でバリエーション2選択肢定義をクリア
+            if 'バリエーション2選択肢定義' in df.columns and 'SKU管理番号' in df.columns and '商品管理番号（商品URL）' in df.columns:
+                # 親行の条件：商品管理番号があり、かつSKU管理番号が空
+                parent_mask = (df['商品管理番号（商品URL）'] != '') & \
+                             (df['商品管理番号（商品URL）'].notna()) & \
+                             ((df['SKU管理番号'] == '') | df['SKU管理番号'].isna())
+                
+                # 親行以外をクリア
+                non_parent_mask = ~parent_mask
+                df.loc[non_parent_mask, 'バリエーション2選択肢定義'] = ''
+                
+                # ファイルを上書き保存
+                df.to_csv(file_path, index=False, encoding='shift_jis', line_terminator='\r\n')
+                logger.info(f"Cleared variation2 definitions for {non_parent_mask.sum()} non-parent rows in {filename}")
+        except Exception as e:
+            logger.error(f"Error clearing SKU variation2 definitions: {e}")
+    
+    # 分割オプションがオンで、ファイルが存在する場合
+    if file_path.exists() and split:
+        try:
+            df = pd.read_csv(file_path, encoding='shift_jis')
+            row_count = len(df)
+            
+            # 6万行を超える場合は分割
+            if row_count > 60000:
+                logger.info(f"File has {row_count} rows, splitting into multiple files")
+                
+                # 分割処理
+                base_name = filename.rsplit('.', 1)[0]
+                split_files = csv_splitter.split_by_parent_products(
+                    df, OUTPUT_DIR, base_name
+                )
+                
+                # ZIPファイルを作成
+                import zipfile
+                zip_filename = f"{base_name}_split.zip"
+                zip_path = OUTPUT_DIR / zip_filename
+                
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for split_file in split_files:
+                        zipf.write(split_file, split_file.name)
+                
+                return FileResponse(
+                    path=zip_path,
+                    media_type='application/zip',
+                    filename=zip_filename,
+                    headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+                )
+        except Exception as e:
+            logger.error(f"Error splitting file: {e}")
+            # エラーの場合は通常のダウンロード
+    
     if file_path.exists():
         return FileResponse(
             path=file_path,
@@ -630,15 +709,6 @@ async def download_file(filename: str):
             )
     
     raise HTTPException(status_code=404, detail="File not found")
-    
-    return FileResponse(
-        path=file_path,
-        media_type='text/csv',
-        filename=filename,
-        headers={
-            "Content-Type": "text/csv; charset=shift_jis"
-        }
-    )
 
 @app.get("/api/devices/{file_id}")
 async def get_devices(file_id: str):

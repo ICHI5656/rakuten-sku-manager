@@ -46,12 +46,32 @@ class CSVProcessor:
     
     def save_csv(self, df: pd.DataFrame, file_path: Path):
         """Save DataFrame to CSV with Shift-JIS encoding"""
+        # Create a copy to avoid modifying the original DataFrame
+        df_copy = df.copy()
+        
+        # バリエーション2選択肢定義は親行（商品管理番号あり＆SKU管理番号なし）だけに残す
+        if 'バリエーション2選択肢定義' in df_copy.columns and 'SKU管理番号' in df_copy.columns and '商品管理番号（商品URL）' in df_copy.columns:
+            # 親行の条件：商品管理番号があり、かつSKU管理番号が空
+            parent_mask = (df_copy['商品管理番号（商品URL）'] != '') & \
+                         (df_copy['商品管理番号（商品URL）'].notna()) & \
+                         ((df_copy['SKU管理番号'] == '') | df_copy['SKU管理番号'].isna())
+            
+            # 親行以外のすべての行でバリエーション2選択肢定義を空にする
+            non_parent_mask = ~parent_mask
+            df_copy.loc[non_parent_mask, 'バリエーション2選択肢定義'] = ''
+            
+            # デバッグ出力
+            cleared_count = non_parent_mask.sum()
+            parent_count = parent_mask.sum()
+            print(f"[DEBUG] Kept バリエーション2選択肢定義 for {parent_count} parent rows")
+            print(f"[DEBUG] Cleared バリエーション2選択肢定義 for {cleared_count} non-parent rows")
+        
         # Ensure column order matches original
-        if self.original_columns and set(df.columns) == set(self.original_columns):
-            df = df[self.original_columns]
+        if self.original_columns and set(df_copy.columns) == set(self.original_columns):
+            df_copy = df_copy[self.original_columns]
         
         # Save with Shift-JIS encoding and CRLF line endings
-        df.to_csv(
+        df_copy.to_csv(
             file_path,
             index=False,
             encoding='shift_jis',

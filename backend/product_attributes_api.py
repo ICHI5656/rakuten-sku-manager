@@ -587,28 +587,86 @@ async def import_csv(file: UploadFile = File(...)):
 
 @router.get("/export-csv")
 async def export_csv():
-    """Export all devices to CSV"""
+    """Export parent devices only to CSV (exclude child/sub devices)"""
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
         
-        # Read all data
-        df = pd.read_sql_query("""
+        # まず、親デバイスを特定する
+        # 親デバイス = 各サイズカテゴリで最初に登録されたデバイス、またはキッズ/シニア向けでない通常のデバイス
+        
+        # キッズ・シニア向けデバイスのパターン
+        kids_senior_patterns = [
+            'キッズケータイ', 'mamorino', 'あんしんファミリースマホ', 'あんしんスマホ',
+            'らくらくフォン', 'らくらくホン', 'BASIO', 'シンプルスマホ', 'かんたんスマホ',
+            'ジュニアスマホ', 'キッズ向け', 'シニア向け'
+        ]
+        
+        # WHERE句を構築 - キッズ・シニア向けデバイスを除外
+        where_conditions = []
+        for pattern in kids_senior_patterns:
+            where_conditions.append(f"variation_item_choice_2 NOT LIKE '%{pattern}%'")
+            where_conditions.append(f"product_attribute_8 NOT LIKE '%{pattern}%'")
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        # 親デバイスのみを取得
+        # グループごとの最初のデバイスを親と見なす
+        query = f"""
+            WITH ranked_devices AS (
+                SELECT 
+                    size_category,
+                    variation_item_choice_2,
+                    product_attribute_8,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY size_category, 
+                        SUBSTR(variation_item_choice_2, 1, 
+                            CASE 
+                                WHEN INSTR(variation_item_choice_2, ' ') > 0 
+                                THEN INSTR(variation_item_choice_2, ' ') - 1
+                                ELSE LENGTH(variation_item_choice_2)
+                            END
+                        )
+                        ORDER BY id
+                    ) as rn
+                FROM product_devices
+                WHERE {where_clause}
+            )
             SELECT 
                 size_category as 'サイズ',
                 variation_item_choice_2 as 'バリエーション項目選択肢2',
                 product_attribute_8 as '商品属性（値）8'
-            FROM product_devices
-            ORDER BY size_category, variation_item_choice_2
-        """, conn)
+            FROM ranked_devices
+            WHERE rn = 1
+            ORDER BY 
+                CASE size_category
+                    WHEN '[SS]' THEN 0
+                    WHEN '[S]' THEN 1
+                    WHEN '[M]' THEN 2
+                    WHEN '[L]' THEN 3
+                    WHEN '[LL]' THEN 4
+                    WHEN '[2L]' THEN 5
+                    WHEN '[3L]' THEN 6
+                    WHEN '[4L]' THEN 7
+                    WHEN '[i6]' THEN 8
+                    ELSE 99
+                END,
+                variation_item_choice_2
+        """
+        
+        df = pd.read_sql_query(query, conn)
         
         conn.close()
         
-        # Save to temporary file with Shift-JIS encoding
+        # CSVファイルを作成
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"product_attributes_{timestamp}.csv"
+        filename = f"product_attributes_parent_only_{timestamp}.csv"
         tmp_path = f"/tmp/{filename}"
         
+        # Shift-JISエンコーディングで保存
         df.to_csv(tmp_path, index=False, encoding='shift_jis')
+        
+        print(f"Exported {len(df)} parent devices to CSV")
         
         return FileResponse(
             tmp_path,

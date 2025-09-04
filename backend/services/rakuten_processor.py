@@ -80,6 +80,11 @@ class RakutenCSVProcessor:
             parent_rows = product_data['parent_rows']
             sku_rows = product_data['sku_rows']
             
+            # 既存のSKU行のバリエーション2選択肢定義をクリア
+            if not sku_rows.empty and device_def_col in sku_rows.columns:
+                sku_rows[device_def_col] = ''
+                print(f"[DEBUG] Cleared existing {device_def_col} in {len(sku_rows)} SKU rows")
+            
             if not parent_rows.empty:
                 product_id = parent_rows.iloc[0][product_col]
                 
@@ -114,6 +119,9 @@ class RakutenCSVProcessor:
                                 if color is not None:
                                     new_row[color_col] = color
                                 new_row[sku_col] = ''  # 後で採番される
+                                # SKU行のバリエーション2選択肢定義を空にする
+                                if device_def_col in new_row.index:
+                                    new_row[device_def_col] = ''
                                 new_sku_rows.append(new_row)
                         
                         if new_sku_rows:
@@ -186,6 +194,11 @@ class RakutenCSVProcessor:
                 
                 # システム連携用SKU番号を生成（device_attributesからsize_categoryを使用）
                 sku_rows = self._generate_system_sku_numbers(sku_rows, product_id, device_col, color_col, device_attributes)
+                
+                # SKU行のバリエーション2選択肢定義を空にする（親行のみに保持）
+                if device_def_col in sku_rows.columns:
+                    sku_rows[device_def_col] = ''
+                    print(f"[DEBUG] Cleared {device_def_col} in SKU rows for product {product_id}")
                 
                 # 親行とSKU行を結合
                 product_result = pd.concat([parent_rows, sku_rows], ignore_index=True)
@@ -429,6 +442,11 @@ class RakutenCSVProcessor:
                     
                     # SKU番号は後で全体的に再採番するので、一時的に空にする
                     new_row[sku_col] = ""
+                    
+                    # SKU行のバリエーション2選択肢定義を空にする（親行のみに保持）
+                    device_def_col = 'バリエーション2選択肢定義'
+                    if device_def_col in new_row.index:
+                        new_row[device_def_col] = ''
                     
                     new_rows.append(new_row)
         
