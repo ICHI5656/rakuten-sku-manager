@@ -357,6 +357,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
 
   return (
     <Box>
+
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, minHeight: '400px', display: 'flex', flexDirection: 'column' }}>
@@ -527,6 +528,33 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
             <Typography variant="body2" color="text.secondary" gutterBottom>
               新しい機種をデータベースに登録するか、既存の機種をデータベースから選択できます
             </Typography>
+            
+            {/* 上部の次へボタン（より目立つ） */}
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end',
+              mb: 2
+            }}>
+              <Button
+                variant="contained"
+                onClick={handleNext}
+                size="large"
+                endIcon={<ArrowForwardIcon />}
+                sx={{
+                  backgroundColor: '#ff5722',
+                  '&:hover': {
+                    backgroundColor: '#e64a19'
+                  },
+                  fontWeight: 'bold',
+                  fontSize: '1.1rem',
+                  px: 4,
+                  py: 1.5,
+                  boxShadow: 3
+                }}
+              >
+                処理を次へ進める
+              </Button>
+            </Box>
             
             {/* カスタマイズ状態の表示 */}
             {finalDeviceOrder && (

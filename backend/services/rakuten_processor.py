@@ -221,8 +221,12 @@ class RakutenCSVProcessor:
                         else:
                             print(f"[SUCCESS] {col} successfully cleared from all SKU rows")
                 
-                # 親行とSKU行を結合
-                product_result = pd.concat([parent_rows, sku_rows], ignore_index=True)
+                # 親行、オプション行、SKU行を結合
+                option_rows = product_data.get('option_rows', pd.DataFrame())
+                if not option_rows.empty:
+                    product_result = pd.concat([parent_rows, option_rows, sku_rows], ignore_index=True)
+                else:
+                    product_result = pd.concat([parent_rows, sku_rows], ignore_index=True)
                 result_dfs.append(product_result)
         
         # 全商品を結合
@@ -259,12 +263,23 @@ class RakutenCSVProcessor:
                     has_product_name = pd.notna(row.get('商品名', None)) and row.get('商品名', '') != ''
                     has_product_number = pd.notna(row.get('商品番号', None)) and row.get('商品番号', '') != ''
                     
-                    # 親行として有効な条件：商品名または商品番号がある
+                    # オプション関連データの存在をチェック
+                    has_option_type = pd.notna(row.get('選択肢タイプ', None)) and row.get('選択肢タイプ', '') != ''
+                    has_option_name = pd.notna(row.get('商品オプション項目名', None)) and row.get('商品オプション項目名', '') != ''
+                    
+                    # 親行として有効な条件：商品名または商品番号がある行は真の親行
                     if has_product_name or has_product_number:
                         products_dict[product_id]['parent_rows'].append(row)
                         print(f"[DEBUG] Added valid parent row for product {product_id}")
+                    # オプションデータのみの行はSKU行でもないが親行でもない、別カテゴリとして保持
+                    elif has_option_type or has_option_name:
+                        # オプション行として別途管理（option_rowsカテゴリを新設）
+                        if 'option_rows' not in products_dict[product_id]:
+                            products_dict[product_id]['option_rows'] = []
+                        products_dict[product_id]['option_rows'].append(row)
+                        print(f"[DEBUG] Added option data row for product {product_id}")
                     else:
-                        print(f"[DEBUG] Skipped invalid parent row for product {product_id} (missing product name/number)")
+                        print(f"[DEBUG] Skipped completely empty row for product {product_id}")
                 else:
                     # SKU行
                     products_dict[product_id]['sku_rows'].append(row)
@@ -290,6 +305,7 @@ class RakutenCSVProcessor:
             products.append({
                 'parent_rows': parent_df,
                 'sku_rows': pd.DataFrame(product_data['sku_rows']) if product_data['sku_rows'] else pd.DataFrame(),
+                'option_rows': pd.DataFrame(product_data.get('option_rows', [])) if product_data.get('option_rows') else pd.DataFrame(),
                 'product_id': product_id
             })
         
