@@ -13,6 +13,7 @@ export interface ProcessRequest {
     attribute_value?: string;
     size_category?: string;
   }>;
+  anve_mode?: boolean;
 }
 
 export interface ProcessResponse {
