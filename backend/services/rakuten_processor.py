@@ -80,10 +80,14 @@ class RakutenCSVProcessor:
             parent_rows = product_data['parent_rows']
             sku_rows = product_data['sku_rows']
             
-            # 既存のSKU行のバリエーション2選択肢定義をクリア
-            if not sku_rows.empty and device_def_col in sku_rows.columns:
-                sku_rows[device_def_col] = ''
-                print(f"[DEBUG] Cleared existing {device_def_col} in {len(sku_rows)} SKU rows")
+            # 既存のSKU行のバリエーション1・2選択肢定義をクリア
+            if not sku_rows.empty:
+                if device_def_col in sku_rows.columns:
+                    sku_rows[device_def_col] = ''
+                    print(f"[DEBUG] Cleared existing {device_def_col} in {len(sku_rows)} SKU rows")
+                if 'バリエーション1選択肢定義' in sku_rows.columns:
+                    sku_rows['バリエーション1選択肢定義'] = ''
+                    print(f"[DEBUG] Cleared existing バリエーション1選択肢定義 in {len(sku_rows)} SKU rows")
             
             if not parent_rows.empty:
                 product_id = parent_rows.iloc[0][product_col]
@@ -119,9 +123,12 @@ class RakutenCSVProcessor:
                                 if color is not None:
                                     new_row[color_col] = color
                                 new_row[sku_col] = ''  # 後で採番される
-                                # SKU行のバリエーション2選択肢定義を空にする
+                                # SKU行のバリエーション1・2選択肢定義を確実に空にする
                                 if device_def_col in new_row.index:
                                     new_row[device_def_col] = ''
+                                if 'バリエーション1選択肢定義' in new_row.index:
+                                    new_row['バリエーション1選択肢定義'] = ''
+                                print(f"[DEBUG] Cleared variation definitions for new SKU row: device={device}, color={color}")
                                 new_sku_rows.append(new_row)
                         
                         if new_sku_rows:
@@ -195,10 +202,24 @@ class RakutenCSVProcessor:
                 # システム連携用SKU番号を生成（device_attributesからsize_categoryを使用）
                 sku_rows = self._generate_system_sku_numbers(sku_rows, product_id, device_col, color_col, device_attributes)
                 
-                # SKU行のバリエーション2選択肢定義を空にする（親行のみに保持）
+                # SKU行のバリエーション1・2選択肢定義を確実に空にする（親行のみに保持）
                 if device_def_col in sku_rows.columns:
                     sku_rows[device_def_col] = ''
                     print(f"[DEBUG] Cleared {device_def_col} in SKU rows for product {product_id}")
+                if 'バリエーション1選択肢定義' in sku_rows.columns:
+                    sku_rows['バリエーション1選択肢定義'] = ''
+                    print(f"[DEBUG] Cleared バリエーション1選択肢定義 in SKU rows for product {product_id}")
+                
+                # 確認のため、SKU行にバリエーション定義が残っていないかチェック
+                variation_check_cols = ['バリエーション1選択肢定義', 'バリエーション2選択肢定義']
+                for col in variation_check_cols:
+                    if col in sku_rows.columns:
+                        remaining_defs = sku_rows[col].dropna()
+                        remaining_defs = remaining_defs[remaining_defs != '']
+                        if not remaining_defs.empty:
+                            print(f"[WARNING] {col} still contains data in SKU rows: {len(remaining_defs)} rows affected")
+                        else:
+                            print(f"[SUCCESS] {col} successfully cleared from all SKU rows")
                 
                 # 親行とSKU行を結合
                 product_result = pd.concat([parent_rows, sku_rows], ignore_index=True)
@@ -234,8 +255,16 @@ class RakutenCSVProcessor:
                     }
                 
                 if not has_sku:
-                    # 親行
-                    products_dict[product_id]['parent_rows'].append(row)
+                    # 親行判定を厳格化：商品名など重要データがある行のみを親行とする
+                    has_product_name = pd.notna(row.get('商品名', None)) and row.get('商品名', '') != ''
+                    has_product_number = pd.notna(row.get('商品番号', None)) and row.get('商品番号', '') != ''
+                    
+                    # 親行として有効な条件：商品名または商品番号がある
+                    if has_product_name or has_product_number:
+                        products_dict[product_id]['parent_rows'].append(row)
+                        print(f"[DEBUG] Added valid parent row for product {product_id}")
+                    else:
+                        print(f"[DEBUG] Skipped invalid parent row for product {product_id} (missing product name/number)")
                 else:
                     # SKU行
                     products_dict[product_id]['sku_rows'].append(row)
@@ -245,11 +274,21 @@ class RakutenCSVProcessor:
                 last_product_id = list(products_dict.keys())[-1]
                 products_dict[last_product_id]['sku_rows'].append(row)
         
-        # 辞書からリストに変換
+        # 辞書からリストに変換と親行重複チェック
         products = []
         for product_id, product_data in products_dict.items():
+            parent_df = pd.DataFrame(product_data['parent_rows'])
+            
+            # 親行の重複をチェックし、最初の有効な親行のみ保持
+            if not parent_df.empty:
+                if len(parent_df) > 1:
+                    print(f"[WARNING] Product {product_id} has {len(parent_df)} parent rows, keeping first valid one")
+                    # 最初の親行のみ保持
+                    parent_df = parent_df.iloc[[0]]
+                    print(f"[DEBUG] Reduced to {len(parent_df)} parent row for product {product_id}")
+            
             products.append({
-                'parent_rows': pd.DataFrame(product_data['parent_rows']),
+                'parent_rows': parent_df,
                 'sku_rows': pd.DataFrame(product_data['sku_rows']) if product_data['sku_rows'] else pd.DataFrame(),
                 'product_id': product_id
             })
@@ -368,6 +407,12 @@ class RakutenCSVProcessor:
                 color_sku_map[''] = base_row
             else:
                 base_row = parent_rows.iloc[0].copy()
+                # 親行からコピーした場合、バリエーション1・2選択肢定義を確実にクリア
+                if 'バリエーション2選択肢定義' in base_row.index:
+                    base_row['バリエーション2選択肢定義'] = ''
+                if 'バリエーション1選択肢定義' in base_row.index:
+                    base_row['バリエーション1選択肢定義'] = ''
+                print(f"[DEBUG] Cleared variation definitions from parent row template")
                 color_sku_map[''] = base_row
         
         new_rows = []
@@ -443,10 +488,13 @@ class RakutenCSVProcessor:
                     # SKU番号は後で全体的に再採番するので、一時的に空にする
                     new_row[sku_col] = ""
                     
-                    # SKU行のバリエーション2選択肢定義を空にする（親行のみに保持）
+                    # SKU行のバリエーション1・2選択肢定義を確実に空にする（親行のみに保持）
                     device_def_col = 'バリエーション2選択肢定義'
                     if device_def_col in new_row.index:
                         new_row[device_def_col] = ''
+                    if 'バリエーション1選択肢定義' in new_row.index:
+                        new_row['バリエーション1選択肢定義'] = ''
+                    print(f"[DEBUG] Cleared variation definitions for new device row: {device}")
                     
                     new_rows.append(new_row)
         
