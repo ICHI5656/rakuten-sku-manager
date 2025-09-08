@@ -1,0 +1,16 @@
+{
+  "main_brands": [
+    "IPHONE",
+    "XPERIA",
+    "AQUOS",
+    "GALAXY",
+    "GOOGLE PIXEL",
+    "HUAWEI",
+    "ARROWS",
+    "その他"
+  ],
+  "display_settings": {
+    "show_only_main": true,
+    "allow_custom": false
+  }
+}

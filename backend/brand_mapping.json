@@ -1,0 +1,97 @@
+{
+  "IPHONE": {
+    "variations": [
+      "iPhone",
+      "iPad",
+      "iPod"
+    ],
+    "attribute_pattern": "amicoco|アップル|",
+    "display_name": "iPhone"
+  },
+  "XPERIA": {
+    "variations": [
+      "Xperia"
+    ],
+    "attribute_pattern": "amicoco|ソニー|",
+    "display_name": "Xperia"
+  },
+  "AQUOS": {
+    "variations": [
+      "AQUOS",
+      "sense",
+      "wish",
+      "zero"
+    ],
+    "attribute_pattern": "amicoco|シャープ|",
+    "display_name": "AQUOS"
+  },
+  "GALAXY": {
+    "variations": [
+      "Galaxy",
+      "Note",
+      "Fold",
+      "Flip"
+    ],
+    "attribute_pattern": "amicoco|サムスン|",
+    "display_name": "Galaxy"
+  },
+  "GOOGLE PIXEL": {
+    "variations": [
+      "Pixel",
+      "Nexus"
+    ],
+    "attribute_pattern": "amicoco|グーグル|",
+    "display_name": "Google Pixel"
+  },
+  "HUAWEI": {
+    "variations": [
+      "HUAWEI",
+      "nova",
+      "Mate",
+      "P30",
+      "P40"
+    ],
+    "attribute_pattern": "amicoco|ファーウェイ|",
+    "display_name": "HUAWEI"
+  },
+  "ARROWS": {
+    "variations": [
+      "arrows",
+      "F-41",
+      "F-51",
+      "F-52"
+    ],
+    "attribute_pattern": "amicoco|富士通|",
+    "display_name": "arrows"
+  },
+  "OPPO": {
+    "variations": [
+      "OPPO",
+      "Reno",
+      "Find",
+      "A"
+    ],
+    "attribute_pattern": "amicoco|オッポ|",
+    "display_name": "OPPO"
+  },
+  "XIAOMI": {
+    "variations": [
+      "Xiaomi",
+      "Redmi",
+      "Mi",
+      "POCO"
+    ],
+    "attribute_pattern": "amicoco|シャオミ|",
+    "display_name": "Xiaomi"
+  },
+  "その他": {
+    "variations": [
+      "らくらくフォン",
+      "キッズケータイ",
+      "BASIO",
+      "かんたんスマホ"
+    ],
+    "attribute_pattern": "amicoco|その他|",
+    "display_name": "その他"
+  }
+}

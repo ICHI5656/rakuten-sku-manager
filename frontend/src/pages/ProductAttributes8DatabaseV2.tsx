@@ -83,7 +83,7 @@ function TabPanel(props: TabPanelProps) {
       id={`brand-tabpanel-${index}`}
       aria-labelledby={`brand-tab-${index}`}
     >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+      {value === index && <Box sx={{ p: 1.5 }}>{children}</Box>}
     </div>
   );
 }
@@ -111,7 +111,7 @@ export default function ProductAttributes8DatabaseV2() {
   const [selectedBrand, setSelectedBrand] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [totalDevices, setTotalDevices] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
@@ -120,6 +120,7 @@ export default function ProductAttributes8DatabaseV2() {
   // Dialog states
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
+  const [openAddBrandDialog, setOpenAddBrandDialog] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
   
   // Form data
@@ -129,6 +130,13 @@ export default function ProductAttributes8DatabaseV2() {
     attribute_value: '',
     size_category: '',
     usage_count: 0
+  });
+
+  // New brand form data
+  const [newBrandData, setNewBrandData] = useState({
+    name: '',
+    name_jp: '',
+    display_order: 999
   });
 
   // Statistics
@@ -199,7 +207,11 @@ export default function ProductAttributes8DatabaseV2() {
     try {
       const response = await fetch('/api/product-attributes/sizes');
       const data = await response.json();
-      setSizes(data.sizes.map((s: any) => s.size));
+      if (data.sizes) {
+        setSizes(data.sizes.map((s: any) => s.size));
+      } else if (Array.isArray(data)) {
+        setSizes(data.map((s: any) => s.size));
+      }
     } catch (error) {
       console.error('Error fetching sizes:', error);
     }
@@ -223,6 +235,34 @@ export default function ProductAttributes8DatabaseV2() {
         by_size: [],
         popular_devices: []
       });
+    }
+  };
+
+  const handleAddBrand = async () => {
+    try {
+      const response = await fetch('/api/product-attributes/brands', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newBrandData)
+      });
+
+      if (response.ok) {
+        setOpenAddBrandDialog(false);
+        setNewBrandData({
+          name: '',
+          name_jp: '',
+          display_order: 999
+        });
+        fetchBrands(); // Refresh the brands list
+        alert('ブランドが正常に追加されました');
+      } else {
+        alert('ブランドの追加に失敗しました');
+      }
+    } catch (error) {
+      console.error('Error adding brand:', error);
+      alert('ブランドの追加中にエラーが発生しました');
     }
   };
 
@@ -366,56 +406,56 @@ export default function ProductAttributes8DatabaseV2() {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
+    <Box sx={{ p: 2, maxWidth: '100%', mx: 'auto' }}>
+      <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>
         商品属性（値）8 データベース管理
       </Typography>
 
       {/* Statistics Cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
+      <Grid container spacing={1.5} sx={{ mb: 2 }}>
+        <Grid item xs={6} sm={3}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="textSecondary" gutterBottom>
                 総デバイス数
               </Typography>
-              <Typography variant="h5">
+              <Typography variant="h6">
                 {stats?.total_devices || 0}
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
+        <Grid item xs={6} sm={3}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="textSecondary" gutterBottom>
                 ブランド数
               </Typography>
-              <Typography variant="h5">
+              <Typography variant="h6">
                 {brands?.length || 0}
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
+        <Grid item xs={6} sm={3}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="textSecondary" gutterBottom>
                 サイズカテゴリ数
               </Typography>
-              <Typography variant="h5">
+              <Typography variant="h6">
                 {sizes?.length || 0}
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
+        <Grid item xs={6} sm={3}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="textSecondary" gutterBottom>
                 最多ブランド
               </Typography>
-              <Typography variant="h5">
+              <Typography variant="h6" sx={{ fontSize: '1rem' }}>
                 {stats?.by_brand?.[0]?.brand || '-'}
               </Typography>
             </CardContent>
@@ -424,16 +464,27 @@ export default function ProductAttributes8DatabaseV2() {
       </Grid>
 
       {/* Action Buttons */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+      <Box sx={{ mb: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         <Button
           variant="contained"
+          size="small"
           startIcon={<AddIcon />}
           onClick={() => setOpenAddDialog(true)}
         >
-          新規追加
+          デバイス追加
+        </Button>
+        <Button
+          variant="contained"
+          color="secondary"
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={() => setOpenAddBrandDialog(true)}
+        >
+          ブランド追加
         </Button>
         <Button
           variant="outlined"
+          size="small"
           startIcon={<DownloadIcon />}
           onClick={handleExport}
         >
@@ -441,6 +492,7 @@ export default function ProductAttributes8DatabaseV2() {
         </Button>
         <Button
           variant="outlined"
+          size="small"
           startIcon={<UploadIcon />}
           component="label"
         >
@@ -454,6 +506,7 @@ export default function ProductAttributes8DatabaseV2() {
         </Button>
         <Button
           variant="outlined"
+          size="small"
           startIcon={<DownloadIcon />}
           onClick={handleDownloadTemplate}
         >
@@ -461,6 +514,7 @@ export default function ProductAttributes8DatabaseV2() {
         </Button>
         <Button
           variant="outlined"
+          size="small"
           startIcon={<RefreshIcon />}
           onClick={() => {
             fetchDevices();
@@ -473,17 +527,18 @@ export default function ProductAttributes8DatabaseV2() {
       </Box>
 
       {/* Search and Filter */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 2 }}>
+      <Box sx={{ mb: 1.5, display: 'flex', gap: 1 }}>
         <TextField
+          size="small"
           placeholder="デバイス検索..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
-            startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
+            startAdornment: <SearchIcon sx={{ mr: 0.5, color: 'text.secondary', fontSize: '1.2rem' }} />
           }}
-          sx={{ flexGrow: 1, maxWidth: 400 }}
+          sx={{ flexGrow: 1, maxWidth: 300 }}
         />
-        <FormControl sx={{ minWidth: 120 }}>
+        <FormControl size="small" sx={{ minWidth: 100 }}>
           <InputLabel>サイズ</InputLabel>
           <Select
             value={selectedSize}
@@ -502,6 +557,7 @@ export default function ProductAttributes8DatabaseV2() {
         </FormControl>
         {(searchTerm || selectedSize) && (
           <Button
+            size="small"
             startIcon={<ClearIcon />}
             onClick={() => {
               setSearchTerm('');
@@ -514,7 +570,7 @@ export default function ProductAttributes8DatabaseV2() {
       </Box>
 
       {/* Brand Tabs */}
-      <Paper sx={{ width: '100%', mb: 2 }}>
+      <Paper sx={{ width: '100%', mb: 1 }}>
         <Tabs
           value={selectedBrand}
           onChange={(_, newValue) => {
@@ -523,15 +579,23 @@ export default function ProductAttributes8DatabaseV2() {
           }}
           variant="scrollable"
           scrollButtons="auto"
+          sx={{ 
+            minHeight: 42,
+            '& .MuiTab-root': { 
+              minHeight: 42,
+              py: 1,
+              fontSize: '0.875rem'
+            }
+          }}
         >
           {Array.isArray(brands) && brands.map((brand, index) => (
             <Tab
               key={brand.id}
               label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {getBrandIcon(brand.id)}
-                  <span>{brand.name_jp || brand.name}</span>
-                  <Chip size="small" label={brand.device_count || 0} />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ fontSize: '1.1rem' }}>{getBrandIcon(brand.id)}</Box>
+                  <span style={{ fontSize: '0.875rem' }}>{brand.name_jp || brand.name}</span>
+                  <Chip size="small" label={brand.device_count || 0} sx={{ height: 20, fontSize: '0.75rem' }} />
                 </Box>
               }
             />
@@ -541,14 +605,14 @@ export default function ProductAttributes8DatabaseV2() {
         {Array.isArray(brands) && brands.map((brand, index) => (
           <TabPanel key={brand.id} value={selectedBrand} index={index}>
             <TableContainer>
-              <Table>
+              <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>デバイス名</TableCell>
-                    <TableCell>属性値</TableCell>
-                    <TableCell>サイズカテゴリ</TableCell>
-                    <TableCell align="center">使用回数</TableCell>
-                    <TableCell align="center">操作</TableCell>
+                    <TableCell sx={{ py: 1 }}>デバイス名</TableCell>
+                    <TableCell sx={{ py: 1 }}>属性値</TableCell>
+                    <TableCell sx={{ py: 1 }}>サイズカテゴリ</TableCell>
+                    <TableCell align="center" sx={{ py: 1 }}>使用回数</TableCell>
+                    <TableCell align="center" sx={{ py: 1 }}>操作</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -567,18 +631,19 @@ export default function ProductAttributes8DatabaseV2() {
                   ) : (
                     devices.map(device => (
                       <TableRow key={device.id}>
-                        <TableCell>{device.device_name}</TableCell>
-                        <TableCell>{device.attribute_value}</TableCell>
-                        <TableCell>
+                        <TableCell sx={{ py: 0.5 }}>{device.device_name}</TableCell>
+                        <TableCell sx={{ py: 0.5 }}>{device.attribute_value}</TableCell>
+                        <TableCell sx={{ py: 0.5 }}>
                           <Chip
                             label={device.size_category}
                             size="small"
                             color="primary"
                             variant="outlined"
+                            sx={{ height: 22, fontSize: '0.75rem' }}
                           />
                         </TableCell>
-                        <TableCell align="center">{device.usage_count}</TableCell>
-                        <TableCell align="center">
+                        <TableCell align="center" sx={{ py: 0.5 }}>{device.usage_count}</TableCell>
+                        <TableCell align="center" sx={{ py: 0.5 }}>
                           <Tooltip title="編集">
                             <IconButton
                               size="small"
@@ -723,6 +788,49 @@ export default function ProductAttributes8DatabaseV2() {
         <DialogActions>
           <Button onClick={() => setOpenEditDialog(false)}>キャンセル</Button>
           <Button onClick={handleUpdateDevice} variant="contained">更新</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Brand Dialog */}
+      <Dialog open={openAddBrandDialog} onClose={() => setOpenAddBrandDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>新しいブランド追加</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 2 }}>
+            <TextField
+              label="ブランド名（英語）"
+              fullWidth
+              required
+              value={newBrandData.name}
+              onChange={(e) => setNewBrandData({ ...newBrandData, name: e.target.value })}
+              helperText="例: iPhone, Galaxy, Xperia"
+            />
+            <TextField
+              label="ブランド名（日本語）"
+              fullWidth
+              required
+              value={newBrandData.name_jp}
+              onChange={(e) => setNewBrandData({ ...newBrandData, name_jp: e.target.value })}
+              helperText="例: アイフォン, ギャラクシー, エクスペリア"
+            />
+            <TextField
+              label="表示順序"
+              type="number"
+              fullWidth
+              value={newBrandData.display_order}
+              onChange={(e) => setNewBrandData({ ...newBrandData, display_order: parseInt(e.target.value) || 999 })}
+              helperText="数字が小さいほど上に表示されます"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenAddBrandDialog(false)}>キャンセル</Button>
+          <Button 
+            onClick={handleAddBrand} 
+            variant="contained"
+            disabled={!newBrandData.name || !newBrandData.name_jp}
+          >
+            追加
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -1,0 +1,538 @@
+{
+  "iPhone16 ProMax": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone16 Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone16 Pro": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone16": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone15 ProMax": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone15 Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone15 Pro": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone15": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone14 ProMax": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone14 Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone14 Pro": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone14": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone13 ProMax": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone13 Pro": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone13": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone13 mini": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone12 ProMax": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone12Pro": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone12": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone12 mini": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone11 ProMax": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone11 Pro": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone11": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone XR": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone XS Max": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone XS": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone X": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 8 Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 8": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 7 Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 7": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 6s Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 6s": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 6 Plus": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone 6": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone SE 第3世代": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone SE 第2世代": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "iPhone SE 第1世代": {
+    "old": "iPhone",
+    "new": "IPHONE"
+  },
+  "10 VI(SO-52E)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "10 V(SO-52D / SOG11)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "10 lV(SO-52C/SOG07/A202SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "10 lll(SO-52B/SOG04/A102SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "10 ll(SO-41A/SOV43/A001SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "8(SOV42)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "5 V(SO-53D/SOG12)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "5 lV(SO-54C/SOG09)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "5 lll(SO-53B/SOG05)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "5 ll(SO-52A/SOG02/A002SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "5(SO-01M/SOV41/901SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "1 VI(SO-51E)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "1 V(SO-51D / SOG10)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "1 lV(SO-51C / SOG06)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "1 lll(SO-51B/SOG03/A101SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "1 ll(SO-51A/SOG01)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "1(SO-03L/SOV40/802SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "Ace lll(SO-53C / SOG08 / A203SO)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "Ace ll(SO-41B)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "Ace(SO-02L)": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "wish4(SH-52E)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "wish3(SH-53D)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "wish2(SH-51C/SHG08/A204SH)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "wish(SHG06/SH-M20)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense9(SH-53E)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense8(SH-54D/SHG11)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense7(SH-53C/SHG10)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense7 Plus()": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense6(SH-54B/SHG05/SH-RM19)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense5G(SH-53A/SHG03/A004SH)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense3(SH-02M/SHV45/SH-M12)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense3 plus(SHV46/901SH/SH-RM11)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense3 lite(SH-RM12)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "sense3 basic(SHV48)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "(SH-54E)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "R9(SH-51E)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "R8 Pro(SH-51D)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "R8(SH-52D)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "zero6(SHG04)": {
+    "old": "AQUOS",
+    "new": "その他"
+  },
+  "Mate 20 Pro(LAY-L09)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "Mate 9(MHA-L29)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "nova 5T(YAL-L21)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "nova lite 3(POT-LX2J)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "nova lite 3+(POT-LX2J)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "P30 lite(HWV33/MAR-LX2)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "P30 Pro(HW-02L/VOG-L29)": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "S25 Ultra (SC-52F)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S25 (SC-51F)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S24 FE (SCG30)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S24 Ultra": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S24 (SC-51E)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S23 (SC-51D/SCG19)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S23 FE (SCG24)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S23 Ultra (SC-52D/SCG20)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S22 Ultra (SC-52C/SCG14)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S22 (SC-51C/SCG13)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S21 5G (SC-51B/SCG09)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S21+ 5G (SCG10)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S21 Ultra 5G (SC-52B)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S20+ 5G (SC-52A/SCG02)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S20 Ultra 5G (SCG03)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "S20 5G (SC-51A/SCG01)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "A55 5G (SC-53E)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "A54 5G (SC-53D/SCG21)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "A53 5G (SC-53C/SCG15)": {
+    "old": "Galaxy",
+    "new": "その他"
+  },
+  "Pixel 10 Pro": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 10": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 9 Pro XL": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 9 Pro": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 9": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 8a": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 8 Pro": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 8": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 7a": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 7 Pro": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 7": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 6a": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 6 Pro": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 6": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 5a 5G": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 5 (G5NZ6 / GOG01)": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 4a 5G (G025H)": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 4a (G025M)": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 4 XL (G020Q)": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "Pixel 4 (G020N)": {
+    "old": "Google Pixel",
+    "new": "GOOGLE PIXEL"
+  },
+  "ttttt": {
+    "old": "OPPO",
+    "new": "その他"
+  },
+  "ututora": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "ichioichio": {
+    "old": "Xperia",
+    "new": "その他"
+  },
+  "sadaki": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "sawada": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "dadaada": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "kokokoko": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "bububu": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "ichio": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "syuzou": {
+    "old": "HUAWEI",
+    "new": "その他"
+  },
+  "tokunaga": {
+    "old": "HUAWEI",
+    "new": "その他"
+  }
+}

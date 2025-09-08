@@ -99,8 +99,61 @@ def create_database():
     conn.commit()
     conn.close()
 
+@router.get("/brands")
+async def get_brands():
+    """Get list of brands with device counts for database management UI"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Define main brands
+        main_brands = [
+            {"id": "iPhone", "name": "iPhone", "name_jp": "iPhone", "db_name": "IPHONE"},
+            {"id": "Xperia", "name": "Xperia", "name_jp": "Xperia", "db_name": "XPERIA"},
+            {"id": "AQUOS", "name": "AQUOS", "name_jp": "AQUOS", "db_name": "AQUOS"},
+            {"id": "Galaxy", "name": "Galaxy", "name_jp": "Galaxy", "db_name": "GALAXY"},
+            {"id": "Pixel", "name": "Google Pixel", "name_jp": "Google Pixel", "db_name": "GOOGLE PIXEL"},
+            {"id": "Huawei", "name": "HUAWEI", "name_jp": "HUAWEI", "db_name": "HUAWEI"},
+            {"id": "arrows", "name": "arrows", "name_jp": "arrows", "db_name": "ARROWS"},
+            {"id": "Other", "name": "その他", "name_jp": "その他", "db_name": "その他"}
+        ]
+        
+        # Get device counts from device_attributes table if exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='device_attributes'
+        """)
+        has_device_attributes = cursor.fetchone() is not None
+        
+        brands = []
+        for idx, brand_info in enumerate(main_brands):
+            device_count = 0
+            
+            if has_device_attributes:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM device_attributes WHERE brand = ?
+                """, (brand_info["db_name"],))
+                device_count = cursor.fetchone()[0]
+            
+            brands.append({
+                "id": brand_info["id"],
+                "name": brand_info["name"],
+                "name_jp": brand_info["name_jp"],
+                "display_order": idx,
+                "device_count": device_count
+            })
+        
+        conn.close()
+        
+        return {
+            "brands": brands,
+            "total": len(brands)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/available-brands")
-async def get_available_brands():
+async def get_available_brands()
     """Get list of available brands from the database"""
     try:
         conn = get_db_connection()
@@ -753,7 +806,7 @@ async def get_sizes():
         sizes = [{"size": row[0], "count": row[1]} for row in cursor.fetchall()]
         conn.close()
         
-        return sizes
+        return {"sizes": sizes}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

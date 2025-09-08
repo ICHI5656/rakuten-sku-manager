@@ -31,6 +31,11 @@ class DeviceUpdate(BaseModel):
     size_category: Optional[str] = None
     usage_count: Optional[int] = None
 
+class BrandCreate(BaseModel):
+    name: str
+    name_jp: str
+    display_order: int = 999
+
 def get_db_connection():
     """Get database connection"""
     if not os.path.exists(DB_PATH):
@@ -678,5 +683,39 @@ async def clear_all_devices():
             "message": f"Deleted {deleted} devices",
             "deleted": deleted
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/brands")
+async def create_brand(brand: BrandCreate):
+    """Create a new brand"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if brand already exists
+        cursor.execute("SELECT id FROM brands WHERE brand_name = ?", (brand.name,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Brand already exists")
+        
+        # Insert new brand
+        cursor.execute("""
+            INSERT INTO brands (brand_name, brand_name_jp, display_order, is_active)
+            VALUES (?, ?, ?, 1)
+        """, (brand.name, brand.name_jp, brand.display_order))
+        
+        brand_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return {
+            "message": "Brand created successfully",
+            "id": brand_id,
+            "name": brand.name,
+            "name_jp": brand.name_jp,
+            "display_order": brand.display_order
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
