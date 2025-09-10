@@ -221,6 +221,11 @@ class RakutenCSVProcessor:
                         else:
                             print(f"[SUCCESS] {col} successfully cleared from all SKU rows")
                 
+                # 親行の重複を確実に除去（最初の1行のみ保持）
+                if not parent_rows.empty and len(parent_rows) > 1:
+                    print(f"[WARNING] Product {product_id} has {len(parent_rows)} parent rows before final concat, reducing to 1")
+                    parent_rows = parent_rows.iloc[[0]]
+                
                 # 親行、オプション行、SKU行を結合
                 option_rows = product_data.get('option_rows', pd.DataFrame())
                 if not option_rows.empty:
@@ -345,8 +350,21 @@ class RakutenCSVProcessor:
         if device_col not in sku_rows.columns:
             return sku_rows
         
+        # 削除前の機種リスト
+        before_devices = set(sku_rows[device_col].dropna().unique())
+        
         mask = ~sku_rows[device_col].isin(devices_to_remove)
-        return sku_rows[mask].copy()
+        result = sku_rows[mask].copy()
+        
+        # 削除後の機種リスト
+        after_devices = set(result[device_col].dropna().unique()) if not result.empty else set()
+        
+        # 実際に削除された機種
+        actually_removed = before_devices - after_devices
+        if actually_removed:
+            print(f"[DEBUG] Actually removed devices from SKU rows: {actually_removed}")
+        
+        return result
     
     def _apply_db_attributes_to_existing(self, sku_rows: pd.DataFrame, device_col: str, 
                                          device_attributes: List[Dict]) -> pd.DataFrame:
@@ -620,9 +638,21 @@ class RakutenCSVProcessor:
                     original_devices_from_parent = [d.strip() for d in str(var_def).split('|') if d.strip()]
                     break
         
-        # 元の親行定義がある場合はそれを基準とし、ない場合はSKU行の順序を使用
+        # 削除処理の場合: SKU行に存在する機種のみを保持（順序は元の定義から維持）
+        # 元の定義の順序を維持しつつ、SKU行に存在する機種のみをフィルタリング
         if original_devices_from_parent:
-            base_device_order = original_devices_from_parent
+            # SKU行に実際に存在する機種のセット
+            sku_device_set = set(all_sku_devices)
+            # 削除された機種を検出
+            removed_devices = [d for d in original_devices_from_parent if d not in sku_device_set]
+            if removed_devices:
+                print(f"[DEBUG] Devices removed from definition: {removed_devices}")
+            # 元の順序を維持しつつ、SKU行に存在する機種のみを抽出
+            base_device_order = [d for d in original_devices_from_parent if d in sku_device_set]
+            # SKU行にあるが元の定義にない機種を末尾に追加（念のため）
+            for device in all_sku_devices:
+                if device not in base_device_order:
+                    base_device_order.append(device)
         else:
             base_device_order = all_sku_devices
         

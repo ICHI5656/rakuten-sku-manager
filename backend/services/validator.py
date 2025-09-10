@@ -17,6 +17,8 @@ class Validator:
         if missing_columns:
             errors.append(f"Missing required columns: {', '.join(missing_columns)}")
         
+        # Note: No limit on total device count - only SKU total matters (max 400)
+        
         # Validate by product
         if '商品管理番号（商品URL）' in df.columns:
             grouped = df.groupby('商品管理番号（商品URL）')
