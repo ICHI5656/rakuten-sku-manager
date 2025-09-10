@@ -129,8 +129,10 @@ class BatchProcessor:
             # 異なる機種リストの場合：個別処理
             final_devices_to_add = None  # 各ファイルで個別に処理
         
-        # Process each file
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        # Process each file（CPUコア数に基づいて最適化）
+        import multiprocessing
+        optimal_workers = min(multiprocessing.cpu_count(), len(file_paths), 4)
+        with ThreadPoolExecutor(max_workers=optimal_workers) as executor:
             futures = []
             for file_path in file_paths:
                 # 機種違いの場合は各ファイルで個別に機種を処理
@@ -216,7 +218,8 @@ class BatchProcessor:
         device_attributes: Optional[List[Dict]] = None,
         add_position: Optional[str] = None,
         after_device: Optional[str] = None,
-        custom_device_order: Optional[List[str]] = None
+        custom_device_order: Optional[List[str]] = None,
+        enable_alt_processing: bool = True
     ) -> Dict:
         """Process a single file in the batch"""
         try:
@@ -254,6 +257,36 @@ class BatchProcessor:
                     after_device=after_device,
                     custom_device_order=custom_device_order
                 )
+            
+            # ALT処理を実行（enable_alt_processingがTrueの場合のみ）
+            if enable_alt_processing:
+                from services.alt_processor import AltProcessor
+                alt_processor = AltProcessor()
+                
+                # 一時ファイルとして保存してALT処理
+                temp_path = file_path.parent / f"temp_{file_path.stem}.csv"
+                df.to_csv(temp_path, index=False, encoding='shift_jis')
+                
+                try:
+                    # ALT処理を実行
+                    alt_result = alt_processor.process_csv(
+                        input_path=temp_path,
+                        output_path=temp_path,  # 同じファイルに上書き
+                        encoding='shift_jis'
+                    )
+                    logger.info(f"[BATCH] ALT processing completed for {file_path.name}: {alt_result['message']}")
+                    
+                    # 処理後のデータを再読み込み
+                    df = pd.read_csv(temp_path, encoding='shift_jis', dtype=str, keep_default_na=False)
+                    
+                    # 一時ファイルを削除
+                    temp_path.unlink()
+                except Exception as e:
+                    logger.warning(f"[BATCH] ALT processing failed for {file_path.name}: {str(e)}, continuing without ALT updates")
+                    if temp_path.exists():
+                        temp_path.unlink()
+            else:
+                logger.info(f"[BATCH] ALT processing is disabled for {file_path.name}")
             
             # Validate
             validation_result = self.validator.validate_dataframe(df)

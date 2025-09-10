@@ -229,14 +229,25 @@ class RakutenCSVProcessor:
                 # 親行、オプション行、SKU行を結合
                 option_rows = product_data.get('option_rows', pd.DataFrame())
                 if not option_rows.empty:
-                    product_result = pd.concat([parent_rows, option_rows, sku_rows], ignore_index=True)
+                    # copy=Falseでメモリ効率化
+                    product_result = pd.concat([parent_rows, option_rows, sku_rows], ignore_index=True, copy=False)
                 else:
-                    product_result = pd.concat([parent_rows, sku_rows], ignore_index=True)
+                    product_result = pd.concat([parent_rows, sku_rows], ignore_index=True, copy=False)
                 result_dfs.append(product_result)
         
-        # 全商品を結合
+        # 全商品を結合（大量データ対応の最適化）
         if result_dfs:
-            result = pd.concat(result_dfs, ignore_index=True)
+            # 大量のDataFrameを効率的に結合
+            if len(result_dfs) > 10:
+                # バッチ処理で段階的に結合（メモリ効率化）
+                batch_size = 50
+                batched_dfs = []
+                for i in range(0, len(result_dfs), batch_size):
+                    batch = result_dfs[i:i+batch_size]
+                    batched_dfs.append(pd.concat(batch, ignore_index=True, copy=False))
+                result = pd.concat(batched_dfs, ignore_index=True, copy=False)
+            else:
+                result = pd.concat(result_dfs, ignore_index=True, copy=False)
             # SKU状態を保存
             self._save_sku_state()
             return result
@@ -244,75 +255,100 @@ class RakutenCSVProcessor:
         return df
     
     def _split_products(self, df: pd.DataFrame, product_col: str, sku_col: str) -> List[Dict]:
-        """複数商品を分割（同じ商品IDは同じ商品、異なるIDは別商品）"""
-        # 商品IDごとにグループ化
-        products_dict = {}
-        
-        for idx, row in df.iterrows():
-            has_product = pd.notna(row.get(product_col, None)) and row.get(product_col, '') != ''
-            has_sku = pd.notna(row.get(sku_col, None)) and row.get(sku_col, '') != ''
-            
-            if has_product:
-                product_id = row[product_col]
-                
-                # この商品IDが初めての場合、初期化
-                if product_id not in products_dict:
-                    products_dict[product_id] = {
-                        'parent_rows': [],
-                        'sku_rows': [],
-                        'product_id': product_id
-                    }
-                
-                if not has_sku:
-                    # 親行判定を厳格化：商品名など重要データがある行のみを親行とする
-                    has_product_name = pd.notna(row.get('商品名', None)) and row.get('商品名', '') != ''
-                    has_product_number = pd.notna(row.get('商品番号', None)) and row.get('商品番号', '') != ''
-                    
-                    # オプション関連データの存在をチェック
-                    has_option_type = pd.notna(row.get('選択肢タイプ', None)) and row.get('選択肢タイプ', '') != ''
-                    has_option_name = pd.notna(row.get('商品オプション項目名', None)) and row.get('商品オプション項目名', '') != ''
-                    
-                    # 親行として有効な条件：商品名または商品番号がある行は真の親行
-                    if has_product_name or has_product_number:
-                        products_dict[product_id]['parent_rows'].append(row)
-                        print(f"[DEBUG] Added valid parent row for product {product_id}")
-                    # オプションデータのみの行はSKU行でもないが親行でもない、別カテゴリとして保持
-                    elif has_option_type or has_option_name:
-                        # オプション行として別途管理（option_rowsカテゴリを新設）
-                        if 'option_rows' not in products_dict[product_id]:
-                            products_dict[product_id]['option_rows'] = []
-                        products_dict[product_id]['option_rows'].append(row)
-                        print(f"[DEBUG] Added option data row for product {product_id}")
-                    else:
-                        print(f"[DEBUG] Skipped completely empty row for product {product_id}")
-                else:
-                    # SKU行
-                    products_dict[product_id]['sku_rows'].append(row)
-            elif has_sku and products_dict:
-                # 商品IDがないがSKUがある行（前の商品のSKU行）
-                # 最後に処理した商品のSKU行として追加
-                last_product_id = list(products_dict.keys())[-1]
-                products_dict[last_product_id]['sku_rows'].append(row)
-        
-        # 辞書からリストに変換と親行重複チェック
+        """複数商品を分割（高速化版：groupbyを使用）"""
         products = []
-        for product_id, product_data in products_dict.items():
-            parent_df = pd.DataFrame(product_data['parent_rows'])
+        
+        # エラーチェック：必須カラムの存在確認
+        if product_col not in df.columns:
+            print(f"[ERROR] Required column '{product_col}' not found in DataFrame")
+            return products
+        if sku_col not in df.columns:
+            print(f"[ERROR] Required column '{sku_col}' not found in DataFrame")
+            return products
+        
+        # 商品IDでグループ化（sort=Falseで高速化）
+        try:
+            grouped = df.groupby(product_col, sort=False)
+        except Exception as e:
+            print(f"[ERROR] Failed to group by {product_col}: {str(e)}")
+            return products
+        
+        for product_id, group in grouped:
+            # ベクトル化された操作でマスクを作成（高速化）
+            # エラーチェック: groupが空でないことを確認
+            if group.empty:
+                print(f"[WARNING] Empty group for product {product_id}")
+                continue
             
-            # 親行の重複をチェックし、最初の有効な親行のみ保持
-            if not parent_df.empty:
-                if len(parent_df) > 1:
-                    print(f"[WARNING] Product {product_id} has {len(parent_df)} parent rows, keeping first valid one")
-                    # 最初の親行のみ保持
-                    parent_df = parent_df.iloc[[0]]
-                    print(f"[DEBUG] Reduced to {len(parent_df)} parent row for product {product_id}")
-            
-            products.append({
-                'parent_rows': parent_df,
-                'sku_rows': pd.DataFrame(product_data['sku_rows']) if product_data['sku_rows'] else pd.DataFrame(),
-                'option_rows': pd.DataFrame(product_data.get('option_rows', [])) if product_data.get('option_rows') else pd.DataFrame(),
-                'product_id': product_id
-            })
+            try:
+                # SKU行のマスクを作成（ベクトル化）
+                sku_mask = group[sku_col].notna() & (group[sku_col] != '')
+                parent_mask = ~sku_mask
+                
+                # 親行とSKU行を分離（copy=Falseでメモリ効率化）
+                parent_rows = group.loc[parent_mask]
+                sku_rows = group.loc[sku_mask]
+                
+                # 必要な場合のみcopyを実行
+                if not parent_rows.empty:
+                    parent_rows = parent_rows.copy()
+                if not sku_rows.empty:
+                    sku_rows = sku_rows.copy()
+                
+                # オプション行の検出（高速化）
+                option_rows = pd.DataFrame()
+                if not parent_rows.empty:
+                    # 商品名と商品番号の存在チェック（ベクトル化）
+                    valid_parent_mask = pd.Series([True] * len(parent_rows), index=parent_rows.index)
+                    
+                    if '商品名' in parent_rows.columns:
+                        has_product_name = parent_rows['商品名'].notna() & (parent_rows['商品名'] != '')
+                        valid_parent_mask = valid_parent_mask & has_product_name
+                    
+                    if '商品番号' in parent_rows.columns:
+                        has_product_number = parent_rows['商品番号'].notna() & (parent_rows['商品番号'] != '')
+                        valid_parent_mask = valid_parent_mask | has_product_number
+                    
+                    # オプション行の判定（選択肢タイプまたは商品オプション項目名がある行）
+                    option_mask = pd.Series([False] * len(parent_rows), index=parent_rows.index)
+                    
+                    if '選択肢タイプ' in parent_rows.columns:
+                        has_option_type = parent_rows['選択肢タイプ'].notna() & (parent_rows['選択肢タイプ'] != '')
+                        option_mask = option_mask | has_option_type
+                    
+                    if '商品オプション項目名' in parent_rows.columns:
+                        has_option_name = parent_rows['商品オプション項目名'].notna() & (parent_rows['商品オプション項目名'] != '')
+                        option_mask = option_mask | has_option_name
+                    
+                    # オプション行は親行の条件を満たさない行の中から選択
+                    option_mask = option_mask & ~valid_parent_mask
+                    
+                    if option_mask.any():
+                        option_rows = parent_rows.loc[option_mask].copy()
+                        parent_rows = parent_rows.loc[valid_parent_mask].copy()
+                    
+                    # 親行の重複を除去（最初の1行のみ保持）
+                    if len(parent_rows) > 1:
+                        print(f"[WARNING] Product {product_id} has {len(parent_rows)} parent rows, keeping first")
+                        parent_rows = parent_rows.iloc[[0]]
+                
+                # 結果を追加
+                products.append({
+                    'parent_rows': parent_rows,
+                    'sku_rows': sku_rows,
+                    'option_rows': option_rows,
+                    'product_id': product_id
+                })
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to process product {product_id}: {str(e)}")
+                # エラーが発生した場合でも、空のデータで追加
+                products.append({
+                    'parent_rows': pd.DataFrame(),
+                    'sku_rows': pd.DataFrame(),
+                    'option_rows': pd.DataFrame(),
+                    'product_id': product_id
+                })
         
         print(f"Found {len(products)} unique products (by 商品管理番号)")
         for i, product in enumerate(products):
