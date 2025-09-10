@@ -26,7 +26,9 @@ import {
   FormControlLabel,
   Radio,
   Alert,
-  AlertTitle
+  AlertTitle,
+  Switch,
+  Tooltip
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import AddIcon from '@mui/icons-material/Add';
@@ -38,6 +40,7 @@ import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import EditIcon from '@mui/icons-material/Edit';
 import SwapVertIcon from '@mui/icons-material/SwapVert';
+import InfoIcon from '@mui/icons-material/Info';
 import DeviceOrderEditor from './DeviceOrderEditor';
 import DeviceListOrganizer from './DeviceListOrganizer';
 import DeviceSelector from './DeviceSelector';
@@ -45,6 +48,8 @@ import DeviceSelector from './DeviceSelector';
 interface DeviceManagerProps {
   devices: string[];
   productDevices?: Record<string, string[]>;
+  autoFillAltText: boolean;
+  onAutoFillAltTextChange: (value: boolean) => void;
   onNext: (
     devicesToAdd: string[], 
     devicesToRemove: string[], 
@@ -58,7 +63,7 @@ interface DeviceManagerProps {
   onBack: () => void;
 }
 
-const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, onNext, onBack }) => {
+const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, autoFillAltText, onAutoFillAltTextChange, onNext, onBack }) => {
   const [devicesToRemove, setDevicesToRemove] = useState<string[]>([]);
   const [devicesToAdd, setDevicesToAdd] = useState<string[]>([]);
   const [newDevice, setNewDevice] = useState('');
@@ -357,6 +362,33 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ devices, productDevices, 
 
   return (
     <Box>
+      {/* ALTテキスト自動設定オプション */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={autoFillAltText}
+              onChange={(e) => onAutoFillAltTextChange(e.target.checked)}
+              color="primary"
+            />
+          }
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography>商品画像のALTテキスト自動設定</Typography>
+              <Tooltip title="商品画像URL1～10に画像がある場合、ALT1～10に商品名を自動設定します">
+                <IconButton size="small">
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          }
+        />
+        {autoFillAltText && (
+          <Typography variant="body2" color="text.secondary" sx={{ ml: 5, mt: 1 }}>
+            ✅ 親行の商品画像URL1～10に画像パスがある場合、対応するALT1～10に商品名を設定します
+          </Typography>
+        )}
+      </Paper>
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>

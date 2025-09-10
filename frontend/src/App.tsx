@@ -44,6 +44,7 @@ function App() {
   const [processResult, setProcessResult] = useState<ProcessResponse | null>(null);
   const [batchResult, setBatchResult] = useState<any>(null);
   const [error, setError] = useState<string>('');
+  const [autoFillAltText, setAutoFillAltText] = useState<boolean>(true);
 
   const handleModeChange = (_event: React.SyntheticEvent, newMode: 'single' | 'batch') => {
     setMode(newMode);
@@ -109,7 +110,8 @@ function App() {
           custom_device_order: selectedDevices.customDeviceOrder,
           insert_index: selectedDevices.insertIndex,
           device_brand: selectedDevices.deviceBrand,
-          device_attributes: selectedDevices.deviceAttributes
+          device_attributes: selectedDevices.deviceAttributes,
+          auto_fill_alt_text: autoFillAltText
         };
         
         const result = await processCSV(request);
@@ -197,6 +199,8 @@ function App() {
                 <DeviceManager 
                   devices={devices}
                   productDevices={productDevices}
+                  autoFillAltText={autoFillAltText}
+                  onAutoFillAltTextChange={setAutoFillAltText}
                   onNext={handleDeviceSelection}
                   onBack={() => setActiveStep(0)}
                 />

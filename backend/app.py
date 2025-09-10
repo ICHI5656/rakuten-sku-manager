@@ -544,7 +544,8 @@ async def process_csv(request: ProcessRequest):
             insert_index=request.insert_index,
             brand_attributes=brand_attributes,
             device_attributes=final_device_attributes,
-            reset_all_devices=request.reset_all_devices
+            reset_all_devices=request.reset_all_devices,
+            auto_fill_alt_text=request.auto_fill_alt_text
         )
         
         # Validate constraints
@@ -940,7 +941,8 @@ async def batch_process_csv(
     add_position: Optional[str] = Form(None),
     after_device: Optional[str] = Form(None),
     custom_device_order: Optional[str] = Form(None),
-    process_mode: Optional[str] = Form('auto')  # 'auto', 'same_devices', 'different_devices'
+    process_mode: Optional[str] = Form('auto'),  # 'auto', 'same_devices', 'different_devices'
+    auto_fill_alt_text: Optional[bool] = Form(True)
 ):
     """Process multiple CSV files in batch"""
     logger.info(f"Batch processing: {batch_id}")
@@ -1032,7 +1034,8 @@ async def batch_process_csv(
         add_position=add_position,
         after_device=after_device,
         custom_device_order=custom_order,
-        process_mode=process_mode  # Pass process_mode to batch processor
+        process_mode=process_mode,  # Pass process_mode to batch processor
+        auto_fill_alt_text=auto_fill_alt_text  # Pass auto_fill_alt_text parameter
     )
     
     return result

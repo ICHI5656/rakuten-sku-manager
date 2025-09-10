@@ -28,6 +28,7 @@ class ProcessRequest(BaseModel):
     device_brand: Optional[str] = None  # 機種ブランド
     device_attributes: Optional[List[DeviceAttributeInfo]] = None  # 機種固有の属性情報
     reset_all_devices: Optional[bool] = False  # 全機種削除して再定義
+    auto_fill_alt_text: Optional[bool] = True  # 商品画像のALTテキストを商品名で自動設定
 
 class ProcessingOptions(BaseModel):
     maintain_column_order: bool = True

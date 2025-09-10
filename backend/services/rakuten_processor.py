@@ -52,7 +52,7 @@ class RakutenCSVProcessor:
                    after_device: str = None, custom_device_order: List[str] = None,
                    insert_index: int = None, brand_attributes: List[str] = None,
                    device_attributes: List[Dict] = None, apply_db_attributes_to_existing: bool = True,
-                   reset_all_devices: bool = False) -> pd.DataFrame:
+                   reset_all_devices: bool = False, auto_fill_alt_text: bool = True) -> pd.DataFrame:
         """CSVを処理して機種を追加/削除（複数商品対応）
         
         Args:
@@ -232,9 +232,53 @@ class RakutenCSVProcessor:
         # 全商品を結合
         if result_dfs:
             result = pd.concat(result_dfs, ignore_index=True)
+            
+            # ALTテキスト自動設定を実行（オプション）
+            if auto_fill_alt_text:
+                result = self._apply_alt_text_to_images(result)
+                logger.info("商品画像のALTテキストを自動設定しました")
+            
             # SKU状態を保存
             self._save_sku_state()
             return result
+        
+        return df
+    
+    def _apply_alt_text_to_images(self, df: pd.DataFrame) -> pd.DataFrame:
+        """商品画像ALTテキストを商品名で自動設定（1～10まで対応）"""
+        
+        # 楽天CSVの画像関連カラム定義（1～10のみ）
+        image_url_cols = [f'商品画像URL{i}' for i in range(1, 11)]  # 1～10
+        image_alt_cols = [f'商品画像名（ALT）{i}' for i in range(1, 11)]  # 1～10
+        
+        # 親行の識別（商品名が存在する行）
+        if '商品名' not in df.columns:
+            logger.warning("商品名カラムが存在しないため、ALTテキスト設定をスキップします")
+            return df
+            
+        parent_mask = (df['商品名'].notna()) & (df['商品名'] != '')
+        
+        # 親行のみ処理
+        alt_updated_count = 0
+        for idx in df[parent_mask].index:
+            product_name = df.at[idx, '商品名']
+            
+            # 画像URL1～10をチェック
+            for url_col, alt_col in zip(image_url_cols, image_alt_cols):
+                # カラムが存在することを確認
+                if url_col in df.columns and alt_col in df.columns:
+                    # 画像URLが存在する場合
+                    if pd.notna(df.at[idx, url_col]) and str(df.at[idx, url_col]).strip() != '':
+                        # ALTテキストを商品名で設定（既存値も上書き）
+                        old_alt = df.at[idx, alt_col] if pd.notna(df.at[idx, alt_col]) else ""
+                        df.at[idx, alt_col] = product_name
+                        
+                        if old_alt != product_name:
+                            alt_updated_count += 1
+                            logger.info(f"商品「{product_name}」の{alt_col}を設定しました（元の値: {old_alt if old_alt else '空'}）")
+        
+        if alt_updated_count > 0:
+            logger.info(f"合計 {alt_updated_count} 個のALTテキストを更新しました")
         
         return df
     

@@ -53,7 +53,8 @@ class BatchProcessor:
         add_position: Optional[str] = None,
         after_device: Optional[str] = None,
         custom_device_order: Optional[List[str]] = None,
-        process_mode: str = 'auto'  # 'auto', 'same_devices', 'different_devices'
+        process_mode: str = 'auto',  # 'auto', 'same_devices', 'different_devices'
+        auto_fill_alt_text: bool = True
     ) -> Dict:
         """
         Process multiple CSV files in batch
@@ -216,7 +217,8 @@ class BatchProcessor:
         device_attributes: Optional[List[Dict]] = None,
         add_position: Optional[str] = None,
         after_device: Optional[str] = None,
-        custom_device_order: Optional[List[str]] = None
+        custom_device_order: Optional[List[str]] = None,
+        auto_fill_alt_text: bool = True
     ) -> Dict:
         """Process a single file in the batch"""
         try:
@@ -252,7 +254,8 @@ class BatchProcessor:
                     apply_db_attributes_to_existing=True,
                     add_position=add_position,
                     after_device=after_device,
-                    custom_device_order=custom_device_order
+                    custom_device_order=custom_device_order,
+                    auto_fill_alt_text=auto_fill_alt_text
                 )
             
             # Validate

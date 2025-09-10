@@ -14,6 +14,7 @@ export interface ProcessRequest {
     size_category?: string;
   }>;
   anve_mode?: boolean;
+  auto_fill_alt_text?: boolean;
 }
 
 export interface ProcessResponse {

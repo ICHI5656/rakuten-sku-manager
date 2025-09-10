@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**rakuten_sku_manager** is a Docker-based web application for Rakuten RMS CSV processing and product attribute database management. It handles device variation management, SKU auto-numbering, and cross-join expansion for Japanese e-commerce.
+**rakuten_sku_manager** is a Docker-based web application for Rakuten RMS CSV processing and product attribute database management. It handles device variation management, SKU auto-numbering, cross-join expansion for Japanese e-commerce, and automatic ALT text generation for product images.
 
 ## Tech Stack
 - **Backend**: FastAPI (Python 3.11), Pandas, SQLite/Supabase
@@ -58,6 +58,9 @@ npx tsc --noEmit   # TypeScript type checking
 docker cp test.csv rakuten-sku-backend:/app/test.csv
 docker exec rakuten-sku-backend python /app/test_device_position.py
 
+# Test ALT text auto-fill feature
+docker exec rakuten-sku-backend python test_alt_text.py
+
 # Test batch processing
 curl -X POST http://localhost:8000/api/batch-upload -F "files=@file1.csv" -F "files=@file2.csv"
 curl -X GET http://localhost:8000/api/batch-status/{batch_id}
@@ -95,6 +98,7 @@ CSV Upload → Encoding Detection → Product Grouping → Device Management →
    - Maintains consistency across products
    - Database integration for brand-based selection
    - **Important**: バリエーション2選択肢定義 appears ONLY in parent rows
+   - **ALT Text Auto-Fill**: Automatically sets 商品画像名（ALT）1-10 to product name when 商品画像URL exists
 
 4. **SKU Generation** (`backend/services/sku_manager.py`)
    - Format: `sku_a000001`, `sku_b000001` (global numbering)
@@ -179,6 +183,7 @@ interface ProcessRequest {
   process_mode?: 'auto' | 'same_devices' | 'different_devices';  // Batch processing mode
   reset_all_devices?: boolean;        // Clear all existing devices and replace
   output_format?: 'single' | 'per_product' | 'split_60k';
+  auto_fill_alt_text?: boolean;       // Auto-fill ALT text for product images (default: true)
   device_attributes?: Array<{
     device: string;
     attribute_value: string;
@@ -261,6 +266,13 @@ http://<host-ip>:3000           # Replace <host-ip> with actual IP
 - Automatically cleared from all other rows during processing
 - Parent device export filters out child devices (キッズケータイ, etc.)
 - Verified at multiple points: processing, saving, and download
+
+### ALT Text Auto-Fill Not Working
+- Verify 商品画像URL1-10 columns have actual URLs
+- Check `auto_fill_alt_text=true` is passed in request
+- Ensure processing parent rows (not SKU rows)
+- ALT text only sets when corresponding image URL exists
+- Feature processes 商品画像名（ALT）1 through 商品画像名（ALT）10
 
 ### Docker Build Cache Issues
 ```bash

@@ -48,6 +48,7 @@ const BatchProcessor: React.FC<BatchProcessorProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [devicesToAdd, setDevicesToAdd] = useState<string[]>([]);
   const [devicesToRemove, setDevicesToRemove] = useState<string[]>([]);
+  const [autoFillAltText, setAutoFillAltText] = useState<boolean>(true);
   const [showDeviceManager, setShowDeviceManager] = useState(true);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
@@ -89,6 +90,7 @@ const BatchProcessor: React.FC<BatchProcessorProps> = ({
       formData.append('devices_to_remove', JSON.stringify(removeDevices));
       formData.append('output_format', 'single');
       formData.append('apply_to_all', 'true');
+      formData.append('auto_fill_alt_text', autoFillAltText.toString());
       
       // Add position parameters if specified
       if (position) {
@@ -192,6 +194,8 @@ const BatchProcessor: React.FC<BatchProcessorProps> = ({
         <DeviceManager
           devices={allDevices}
           productDevices={allProductDevices || {}}
+          autoFillAltText={autoFillAltText}
+          onAutoFillAltTextChange={setAutoFillAltText}
           onNext={handleDeviceNext}
           onBack={onReset}
           key="batch-device-manager"  // Add key to prevent re-rendering
